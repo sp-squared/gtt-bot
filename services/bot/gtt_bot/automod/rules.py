@@ -10,7 +10,7 @@ from gtt_bot.config import (
     NEW_ACCOUNT_DAYS,
     REQUIRED_ROLE_FOR_AUTOMOD,
 )
-from gtt_bot.discord_utils.permissions import can_be_timed_out
+from gtt_bot.discord_utils.permissions import can_be_timed_out, is_automod_exempt
 from gtt_bot.automod.alerts import send_mod_alert
 
 log = logging.getLogger("bot")
@@ -24,8 +24,7 @@ async def check_automod(message: discord.Message):
     if not isinstance(member, discord.Member):
         return
 
-    # Skip automod entirely for members with roles above GTT Bot in the hierarchy
-    if not can_be_timed_out(member):
+    if is_automod_exempt(member):
         return
 
     content = message.content

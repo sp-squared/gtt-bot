@@ -1,6 +1,6 @@
 import discord
 
-from gtt_bot.config import REQUIRED_ROLE, ALLOWED_CHANNELS, ALLOWED_GUILDS, COOLDOWN_EXEMPT_ROLE
+from gtt_bot.config import REQUIRED_ROLE, ALLOWED_CHANNELS, ALLOWED_GUILDS, COOLDOWN_EXEMPT_ROLES
 
 
 def has_required_role(member: discord.Member) -> bool:
@@ -13,8 +13,19 @@ def is_cooldown_exempt(user: discord.abc.User) -> bool:
     from gtt_bot.config import COOLDOWN_EXEMPT_USERS
     if user.id in COOLDOWN_EXEMPT_USERS:
         return True
-    if COOLDOWN_EXEMPT_ROLE and isinstance(user, discord.Member):
-        return any(role.name == COOLDOWN_EXEMPT_ROLE for role in user.roles)
+    if COOLDOWN_EXEMPT_ROLES and isinstance(user, discord.Member):
+        return any(role.name in COOLDOWN_EXEMPT_ROLES for role in user.roles)
+    return False
+
+
+def is_automod_exempt(member: discord.Member) -> bool:
+    if member.guild_permissions.administrator:
+        return True
+    if COOLDOWN_EXEMPT_ROLES and any(role.name in COOLDOWN_EXEMPT_ROLES for role in member.roles):
+        return True
+    me = member.guild.me
+    if me and member.top_role >= me.top_role:
+        return True
     return False
 
 
