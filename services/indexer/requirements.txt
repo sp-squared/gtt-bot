@@ -4,4 +4,3 @@ llama-index-embeddings-ollama==0.3.1
 llama-index-llms-ollama==0.3.4
 llama-index-vector-stores-qdrant==0.3.2
 qdrant-client==1.12.1
-anthropic>=0.40.0
