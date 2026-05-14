@@ -76,9 +76,12 @@ def _is_gtt_question(terms: list[str]) -> bool:
 
 
 def _build_query_terms(client, collection: str) -> list[str]:
-    """Derive autocomplete terms from vault filenames stored in Qdrant."""
-    seen: set[str] = set()
-    terms: list[str] = []
+    """Derive autocomplete terms from vault filenames stored in Qdrant.
+
+    Ranks by chunk count per file (most-covered topics first) and caps at 25
+    to match Discord's hard autocomplete limit.
+    """
+    chunk_counts: dict[str, int] = {}
     offset = None
     while True:
         points, offset = client.scroll(
@@ -95,12 +98,18 @@ def _build_query_terms(client, collection: str) -> list[str]:
                 fname = json.loads(raw).get("metadata", {}).get("file_name", "")
             except (json.JSONDecodeError, TypeError):
                 continue
-            if fname and fname not in seen:
-                seen.add(fname)
-                terms.append(fname.removesuffix(".md").replace("-", " "))
+            if fname:
+                chunk_counts[fname] = chunk_counts.get(fname, 0) + 1
         if offset is None:
             break
-    return sorted(terms)
+
+    # Sort by chunk count descending — files with more chunks are more
+    # thoroughly documented and therefore higher-value autocomplete targets.
+    ranked = sorted(chunk_counts.items(), key=lambda x: x[1], reverse=True)
+    return [
+        fname.removesuffix(".md").replace("-", " ")
+        for fname, _ in ranked[:25]
+    ]
 
 
 def build_retriever():
