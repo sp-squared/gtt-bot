@@ -1,0 +1,12 @@
+id: gtt-importer
+url: null
+as_token: gtt-importer-as-token-change-me
+hs_token: gtt-importer-hs-token-change-me
+sender_localpart: gtt-importer
+namespaces:
+  users:
+    - exclusive: false
+      regex: "@gttadmin:gtt.local"
+  rooms: []
+  aliases: []
+rate_limited: false

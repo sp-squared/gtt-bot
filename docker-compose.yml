@@ -1,0 +1,95 @@
+services:
+  ollama:
+    image: ollama/ollama:0.3.3
+    container_name: gtt-ollama
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:v1.12.1
+    container_name: gtt-qdrant
+    ports:
+      - "127.0.0.1:6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    restart: unless-stopped
+
+  indexer:
+    build: ./services/indexer
+    container_name: gtt-indexer
+    depends_on:
+      - ollama
+      - qdrant
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      QDRANT_HOST: http://qdrant:6333
+      EMBED_MODEL: ${EMBED_MODEL:-nomic-embed-text}
+      QDRANT_COLLECTION: ${QDRANT_COLLECTION:-vault}
+      VAULT_DIR: /vault
+    volumes:
+      - ${VAULT_PATH}:/vault:ro
+    restart: unless-stopped
+
+  bot:
+    build: ./services/bot
+    container_name: gtt-bot
+    depends_on:
+      - ollama
+      - qdrant
+      - indexer
+    environment:
+      DISCORD_TOKEN: ${DISCORD_TOKEN}
+      OLLAMA_HOST: http://ollama:11434
+      QDRANT_HOST: http://qdrant:6333
+      LLM_MODEL: ${LLM_MODEL:-qwen2.5:7b-instruct}
+      EMBED_MODEL: ${EMBED_MODEL:-nomic-embed-text}
+      QDRANT_COLLECTION: ${QDRANT_COLLECTION:-vault}
+      TOP_K: ${TOP_K:-5}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      ALLOWED_CHANNELS: ${ALLOWED_CHANNELS:-}
+      ALLOWED_GUILDS: ${ALLOWED_GUILDS:-}
+      REQUIRED_ROLE: ${REQUIRED_ROLE:-}
+      COOLDOWN_SECONDS: ${COOLDOWN_SECONDS:-30}
+      COOLDOWN_LOCAL_SECONDS: ${COOLDOWN_LOCAL_SECONDS:-10}
+      MAX_QUESTION_LENGTH: ${MAX_QUESTION_LENGTH:-500}
+      USE_THREADS: ${USE_THREADS:-false}
+      MOD_CHANNEL_ID: ${MOD_CHANNEL_ID:-0}
+      GENERAL_CHANNEL_ID: ${GENERAL_CHANNEL_ID:-0}
+      SELF_PROMO_PATTERNS: ${SELF_PROMO_PATTERNS:-}
+      NEW_ACCOUNT_DAYS: ${NEW_ACCOUNT_DAYS:-7}
+      THREAD_HISTORY_LIMIT: ${THREAD_HISTORY_LIMIT:-30}
+      SUSPICIOUS_MSG_LENGTH: ${SUSPICIOUS_MSG_LENGTH:-200}
+    volumes:
+      - ${VAULT_PATH}:/vault:ro
+      - C:/Users/colin/Documents/Merly/gtt-exports:/exports
+    restart: unless-stopped
+
+
+  # --- Matrix / Element ---
+
+  synapse:
+    image: matrixdotorg/synapse:v1.72.0
+    container_name: gtt-synapse
+    ports:
+      - "127.0.0.1:8008:8008"
+    volumes:
+      - ./matrix:/data
+      - synapse_data:/data/media_store
+    environment:
+      SYNAPSE_CONFIG_PATH: /data/homeserver.yaml
+    restart: unless-stopped
+
+  element:
+    image: vectorim/element-web:v1.11.88
+    container_name: gtt-element
+    ports:
+      - "127.0.0.1:3000:80"
+    restart: unless-stopped
+
+volumes:
+  ollama_data:
+  qdrant_data:
+  synapse_data:
