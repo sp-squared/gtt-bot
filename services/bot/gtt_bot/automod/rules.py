@@ -36,7 +36,7 @@ async def check_automod(message: discord.Message):
         rule = "`@everyone` / `@here` attempt"
         timeout_duration = timedelta(minutes=1)
 
-    # Rule 2: Self-promo in #general — indefinite timeout (28 days)
+    # Rule 2: Self-promo in #general — 28-day timeout for all non-exempt members
     elif (
         message.channel.id == GENERAL_CHANNEL_ID
         and SELF_PROMO_PATTERNS
