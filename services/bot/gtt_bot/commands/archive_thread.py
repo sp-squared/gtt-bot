@@ -24,7 +24,7 @@ def setup(tree: app_commands.CommandTree) -> None:
             await interaction.response.send_message("This command only works in a server.", ephemeral=True)
             return
 
-        if not any(r.name in ("GTT Team", "admin", "mod") for r in interaction.user.roles):
+        if not any(r.name in ("GTT Team", "admin") for r in interaction.user.roles):
             await interaction.response.send_message("This command is restricted to GTT Team.", ephemeral=True)
             return
 

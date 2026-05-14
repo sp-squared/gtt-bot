@@ -15,6 +15,7 @@ async def send_mod_alert(
     timed_out: bool,
     timeout_duration=None,
     flag_only: bool = False,
+    timeout_fail_reason: str | None = None,
 ):
     """Post an alert to the mod channel."""
     if not MOD_CHANNEL_ID:
@@ -34,6 +35,10 @@ async def send_mod_alert(
         timeout_status = "👀 No action taken — flagged for mod review"
     elif timed_out:
         timeout_status = f"✅ Timed out ({duration_str})"
+    elif timeout_fail_reason == "missing permission":
+        timeout_status = "⚠️ Could not time out (bot missing Moderate Members permission)"
+    elif timeout_fail_reason == "error":
+        timeout_status = "⚠️ Could not time out (unexpected error — check logs)"
     else:
         timeout_status = "⚠️ Could not time out (role too high)"
 

@@ -66,14 +66,22 @@ async def check_automod(message: discord.Message):
         return
 
     timed_out = False
+    timeout_fail_reason = None
     if can_be_timed_out(member) and timeout_duration:
         try:
             await member.timeout(timeout_duration, reason=f"Automod: {rule}")
             timed_out = True
             log.info("Timed out %s for rule: %s", member, rule)
         except discord.Forbidden:
-            log.warning("Could not time out %s — missing permissions", member)
+            me = member.guild.me
+            if me and not me.guild_permissions.moderate_members:
+                timeout_fail_reason = "missing permission"
+                log.warning("Could not time out %s — bot lacks Moderate Members permission", member)
+            else:
+                timeout_fail_reason = "role too high"
+                log.warning("Could not time out %s — role too high", member)
         except Exception:
+            timeout_fail_reason = "error"
             log.exception("Timeout failed for %s", member)
 
-    await send_mod_alert(message.guild, member, rule, content, timed_out, timeout_duration=timeout_duration)
+    await send_mod_alert(message.guild, member, rule, content, timed_out, timeout_duration=timeout_duration, timeout_fail_reason=timeout_fail_reason)
