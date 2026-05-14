@@ -8,7 +8,6 @@ from discord import app_commands
 import gtt_bot.globals as G
 from gtt_bot.config import (
     COOLDOWN_ANTHROPIC,
-    COOLDOWN_EXEMPT_USERS,
     DISCORD_MSG_LIMIT,
     DISCORD_TOKEN,
     MAX_QUESTION_LENGTH,
@@ -21,6 +20,7 @@ from gtt_bot.discord_utils.permissions import (
     has_required_role,
     is_allowed_channel,
     is_allowed_guild,
+    is_cooldown_exempt,
 )
 from gtt_bot.discord_utils.thread_history import get_thread_history
 from gtt_bot.discord_utils.thread_mode import get_thread_mode
@@ -132,8 +132,8 @@ async def on_message(message: discord.Message) -> None:
         await message.reply(f"Keep it under {MAX_QUESTION_LENGTH} characters.")
         return
 
-    # Cooldown — exempt users bypass entirely
-    if message.author.id not in COOLDOWN_EXEMPT_USERS:
+    # Cooldown — exempt users and exempt-role members bypass entirely
+    if not is_cooldown_exempt(message.author):
         remaining = check_cooldown(
             message.author.id, G.anthropic_cooldowns, COOLDOWN_ANTHROPIC
         )

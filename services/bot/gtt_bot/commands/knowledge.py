@@ -10,13 +10,12 @@ from discord import app_commands
 
 import gtt_bot.globals as G
 from gtt_bot.config import (
-    COOLDOWN_EXEMPT_USERS,
     COOLDOWN_LOCAL,
     DISCORD_MSG_LIMIT,
     MAX_QUESTION_LENGTH,
 )
 from gtt_bot.discord_utils.cooldown import check_cooldown
-from gtt_bot.discord_utils.permissions import is_allowed_guild
+from gtt_bot.discord_utils.permissions import is_allowed_guild, is_cooldown_exempt
 from gtt_bot.rag.formatters import (
     extractive_summary,
     format_bootstrap_html,
@@ -61,7 +60,7 @@ def setup(tree: app_commands.CommandTree) -> None:
                 f"Query too long — keep it under {MAX_QUESTION_LENGTH} characters.", ephemeral=True
             )
             return
-        if interaction.user.id not in COOLDOWN_EXEMPT_USERS:
+        if not is_cooldown_exempt(interaction.user):
             remaining = check_cooldown(interaction.user.id, G.local_cooldowns, COOLDOWN_LOCAL)
             if remaining > 0:
                 await interaction.response.send_message(
@@ -142,7 +141,7 @@ def setup(tree: app_commands.CommandTree) -> None:
                 f"Query too long — keep it under {MAX_QUESTION_LENGTH} characters.", ephemeral=True
             )
             return
-        if interaction.user.id not in COOLDOWN_EXEMPT_USERS:
+        if not is_cooldown_exempt(interaction.user):
             remaining = check_cooldown(interaction.user.id, G.local_cooldowns, COOLDOWN_LOCAL)
             if remaining > 0:
                 await interaction.response.send_message(

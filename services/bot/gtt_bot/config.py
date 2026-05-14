@@ -23,6 +23,7 @@ COOLDOWN_LOCAL = int(os.environ.get("COOLDOWN_LOCAL_SECONDS", "10"))
 COOLDOWN_EXEMPT_USERS = set(
     int(x.strip()) for x in os.environ.get("COOLDOWN_EXEMPT_USERS", "").split(",") if x.strip()
 )
+COOLDOWN_EXEMPT_ROLE = os.environ.get("COOLDOWN_EXEMPT_ROLE", "").strip()
 MAX_QUESTION_LENGTH = int(os.environ.get("MAX_QUESTION_LENGTH", "500"))
 THREAD_HISTORY_LIMIT = int(os.environ.get("THREAD_HISTORY_LIMIT", "30"))
 

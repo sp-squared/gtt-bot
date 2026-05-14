@@ -1,12 +1,21 @@
 import discord
 
-from gtt_bot.config import REQUIRED_ROLE, ALLOWED_CHANNELS, ALLOWED_GUILDS
+from gtt_bot.config import REQUIRED_ROLE, ALLOWED_CHANNELS, ALLOWED_GUILDS, COOLDOWN_EXEMPT_ROLE
 
 
 def has_required_role(member: discord.Member) -> bool:
     if not REQUIRED_ROLE:
         return True
     return any(role.name == REQUIRED_ROLE for role in member.roles)
+
+
+def is_cooldown_exempt(user: discord.abc.User) -> bool:
+    from gtt_bot.config import COOLDOWN_EXEMPT_USERS
+    if user.id in COOLDOWN_EXEMPT_USERS:
+        return True
+    if COOLDOWN_EXEMPT_ROLE and isinstance(user, discord.Member):
+        return any(role.name == COOLDOWN_EXEMPT_ROLE for role in user.roles)
+    return False
 
 
 def can_be_timed_out(member: discord.Member) -> bool:
