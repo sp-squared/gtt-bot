@@ -31,7 +31,7 @@ def setup(tree: app_commands.CommandTree) -> None:
             from qdrant_client import QdrantClient as QC
             qc = QC(url=QDRANT_HOST)
             info = qc.get_collection(COLLECTION)
-            vector_count = info.points_count or 0
+            vector_count = info.points_count or info.vectors_count or 0
             uptime_seconds = int(time.time() - G._start_time)
             hours, remainder = divmod(uptime_seconds, 3600)
             minutes, seconds = divmod(remainder, 60)

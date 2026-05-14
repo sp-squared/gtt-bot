@@ -78,8 +78,10 @@ def _is_gtt_question(terms: list[str]) -> bool:
 def _build_query_terms(client, collection: str) -> list[str]:
     """Derive autocomplete terms from vault filenames stored in Qdrant.
 
-    Ranks by chunk count per file (most-covered topics first) and caps at 25
-    to match Discord's hard autocomplete limit.
+    Returns ALL vault filenames ranked by chunk count (most-covered topics first).
+    The autocomplete handler applies Discord's 25-choice cap after filtering,
+    so keeping the full pool here maximises how many useful choices appear
+    when a user types a partial query.
     """
     chunk_counts: dict[str, int] = {}
     offset = None
@@ -108,7 +110,7 @@ def _build_query_terms(client, collection: str) -> list[str]:
     ranked = sorted(chunk_counts.items(), key=lambda x: x[1], reverse=True)
     return [
         fname.removesuffix(".md").replace("-", " ")
-        for fname, _ in ranked[:25]
+        for fname, _ in ranked
     ]
 
 
