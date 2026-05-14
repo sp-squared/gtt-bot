@@ -7,13 +7,7 @@ import discord
 from discord import app_commands
 
 from gtt_bot.export.core import fetch_reactions
-from gtt_bot.export.formatters import (
-    format_thread_bootstrap_html,
-    get_forwarded_content,
-    linkify,
-    message_to_dict,
-    render_attachments_html,
-)
+from gtt_bot.export.formatters import get_forwarded_content, linkify, message_to_dict, render_attachments_html
 
 log = logging.getLogger("bot")
 
@@ -31,12 +25,11 @@ def setup(tree: app_commands.CommandTree) -> None:
         name="export-thread",
         description="Export this thread to text, JSON, or HTML",
     )
-    @app_commands.describe(format="Output format: text, json, html, or bootstrap")
+    @app_commands.describe(format="Output format: text, json, or html")
     @app_commands.choices(format=[
         app_commands.Choice(name="text", value="text"),
         app_commands.Choice(name="json", value="json"),
         app_commands.Choice(name="html", value="html"),
-        app_commands.Choice(name="bootstrap", value="bootstrap"),
     ])
     @app_commands.choices(reactions=[
         app_commands.Choice(name="yes", value="yes"),
@@ -128,11 +121,6 @@ def setup(tree: app_commands.CommandTree) -> None:
                 f"<h2>{thread.name} — {len(messages)} messages</h2>\n"
                 f'<table>{"".join(rows)}</table></body></html>'
             )
-            content = html.encode("utf-8")
-            ext = "html"
-
-        elif format == "bootstrap":
-            html = format_thread_bootstrap_html(thread.name, messages, reactions_map)
             content = html.encode("utf-8")
             ext = "html"
 
