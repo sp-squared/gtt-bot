@@ -3,34 +3,31 @@ import logging
 import discord
 from discord import app_commands
 
-import gtt_bot.globals as G
-
 log = logging.getLogger("bot")
 
 
-async def _resolve_starter_author(thread: discord.Thread, client: discord.Client) -> int | None:
-    """Return the user ID of whoever triggered the bot-created thread, or None."""
-    # Check in-memory registry first (covers both mention and knowledge-search threads)
-    if thread.id in G.thread_owners:
-        return G.thread_owners[thread.id]
-    # Fallback: for @mention threads thread.id == parent message.id
-    try:
-        parent = client.get_channel(thread.parent_id) or await client.fetch_channel(thread.parent_id)
-        msg = await parent.fetch_message(thread.id)
-        return msg.author.id
-    except Exception as exc:
-        log.warning("archive-thread: could not resolve starter author for %s: %s", thread.name, exc)
-        return None
-
-
 def setup(tree: app_commands.CommandTree) -> None:
-    @tree.command(name="archive-thread", description="Archive or purge this thread (owner or GTT Team only)")
-    @app_commands.describe(delete="Delete all messages before archiving (default: off)")
+    @tree.command(
+        name="archive-thread",
+        description="Archive this thread (and optionally delete all content)",
+    )
+    @app_commands.describe(delete="Delete all thread messages and the thread itself (default: no)")
     @app_commands.choices(delete=[
-        app_commands.Choice(name="on", value="on"),
-        app_commands.Choice(name="off", value="off"),
+        app_commands.Choice(name="yes", value="yes"),
+        app_commands.Choice(name="no", value="no"),
     ])
-    async def archive_thread(interaction: discord.Interaction, delete: str = "off"):
+    async def archive_thread(
+        interaction: discord.Interaction,
+        delete: str = "no",
+    ):
+        if not isinstance(interaction.user, discord.Member):
+            await interaction.response.send_message("This command only works in a server.", ephemeral=True)
+            return
+
+        if not any(r.name in ("GTT Team", "admin", "mod") for r in interaction.user.roles):
+            await interaction.response.send_message("This command is restricted to GTT Team.", ephemeral=True)
+            return
+
         if not isinstance(interaction.channel, discord.Thread):
             await interaction.response.send_message(
                 "Run this command inside the thread you want to archive.", ephemeral=True
@@ -38,42 +35,58 @@ def setup(tree: app_commands.CommandTree) -> None:
             return
 
         thread = interaction.channel
-        user = interaction.user
 
-        is_gtt_team = isinstance(user, discord.Member) and any(
-            r.name == "GTT Team" for r in user.roles
-        )
-
-        # Direct owner check
-        is_owner = thread.owner_id == user.id
-
-        # For bot-created threads the owner is the bot — check the starter message author
-        if not is_owner:
-            starter_author_id = await _resolve_starter_author(thread, interaction.client)
-            is_owner = starter_author_id == user.id
-
-        if not is_owner and not is_gtt_team:
-            await interaction.response.send_message(
-                "You can only archive threads you created.", ephemeral=True
-            )
-            return
+        # Try to resolve who originally started this thread
+        starter_author = None
+        if thread.parent:
+            try:
+                starter = await thread.parent.fetch_message(thread.id)
+                starter_author = starter.author
+            except (discord.NotFound, discord.HTTPException) as e:
+                log.warning("archive-thread: could not resolve starter author for %s: %s", thread.name, e)
 
         await interaction.response.defer(ephemeral=True)
 
-        if delete == "on":
-            log.info("archive-thread: deleting thread %s by %s", thread.name, user)
+        if delete == "yes":
+            thread_name = thread.name
             try:
                 await thread.delete()
-            except discord.NotFound:
-                pass
-            await interaction.followup.send("Thread deleted.", ephemeral=True)
+                log.info(
+                    "archive-thread: deleted '%s' (starter: %s) by %s",
+                    thread_name,
+                    starter_author,
+                    interaction.user,
+                )
+                # The thread (and its webhook) are gone — send confirmation via DM instead.
+                try:
+                    dm = await interaction.user.create_dm()
+                    await dm.send(
+                        f"✅ Thread **{thread_name}** and all its messages have been deleted."
+                    )
+                except discord.Forbidden:
+                    log.warning(
+                        "archive-thread: could not DM deletion confirmation to %s (DMs closed)",
+                        interaction.user,
+                    )
+            except discord.Forbidden:
+                await interaction.followup.send("Missing permissions to delete this thread.", ephemeral=True)
+            except Exception:
+                log.exception("archive-thread: failed to delete '%s'", thread_name)
+                await interaction.followup.send("Something went wrong deleting the thread.", ephemeral=True)
         else:
-            closing = (
-                "*This thread has been archived by a mod.*"
-                if is_gtt_team and not is_owner
-                else "*This thread has been archived.*"
-            )
-            await thread.send(closing)
-            await thread.edit(archived=True, locked=True)
-            log.info("archive-thread: %s archived by %s", thread.name, user)
-            await interaction.followup.send("Thread archived.", ephemeral=True)
+            try:
+                await thread.edit(archived=True, locked=True)
+                log.info(
+                    "archive-thread: archived '%s' (starter: %s) by %s",
+                    thread.name,
+                    starter_author,
+                    interaction.user,
+                )
+                await interaction.followup.send(
+                    f"Thread **{thread.name}** has been archived and locked.", ephemeral=True
+                )
+            except discord.Forbidden:
+                await interaction.followup.send("Missing permissions to archive this thread.", ephemeral=True)
+            except Exception:
+                log.exception("archive-thread: failed to archive '%s'", thread.name)
+                await interaction.followup.send("Something went wrong archiving the thread.", ephemeral=True)

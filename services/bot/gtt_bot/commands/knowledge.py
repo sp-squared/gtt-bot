@@ -175,8 +175,6 @@ def setup(tree: app_commands.CommandTree) -> None:
                 type=discord.ChannelType.private_thread,
                 invitable=False,
             )
-            from gtt_bot.thread_store import register as register_thread
-            register_thread(thread.id, interaction.user.id)
             await thread.add_user(interaction.user)
 
             for chunk in split_at_sentence(summary_msg):
@@ -189,10 +187,29 @@ def setup(tree: app_commands.CommandTree) -> None:
             )
             log.info("knowledge-search private thread created for %s", interaction.user)
 
-        except discord.Forbidden:
-            await interaction.followup.send(
-                "Could not create a private thread — check bot permissions.", ephemeral=True
+        except discord.Forbidden as e:
+            log.warning(
+                "knowledge-search: private thread creation forbidden for %s: %s",
+                interaction.user,
+                e,
             )
+            # Fall back to DMs when the bot lacks CREATE_PRIVATE_THREADS / MANAGE_THREADS.
+            try:
+                dm = await interaction.user.create_dm()
+                for chunk in split_at_sentence(summary_msg):
+                    await dm.send(chunk)
+                for chunk in split_at_sentence(raw_msg):
+                    await dm.send(chunk)
+                await interaction.followup.send(
+                    "Couldn't create a private thread (bot missing permissions) — results sent to your DMs instead.",
+                    ephemeral=True,
+                )
+                log.info("knowledge-search: fell back to DM for %s", interaction.user)
+            except discord.Forbidden:
+                await interaction.followup.send(
+                    "Could not create a private thread or DM you. Enable DMs from server members and ask an admin to grant the bot `Create Private Threads` + `Manage Threads` permissions.",
+                    ephemeral=True,
+                )
         except Exception:
             log.exception("knowledge-search command failed")
             await interaction.followup.send("Something went wrong with the search.", ephemeral=True)

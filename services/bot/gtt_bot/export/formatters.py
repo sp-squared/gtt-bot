@@ -72,6 +72,136 @@ def linkify(text: str) -> str:
     return "<br>".join(result)
 
 
+def format_thread_bootstrap_html(
+    thread_name: str,
+    messages: list,
+    reactions_map: dict,
+) -> str:
+    """Render an exported thread as a self-contained Bootstrap 5 HTML file.
+
+    Mirrors the knowledge-base Bootstrap output: dark card layout, per-message
+    metric bars showing reaction totals and message length relative to the thread max.
+    """
+    import html as _html
+
+    max_len = max((len(m.content or "") for m in messages), default=1)
+    max_rxn = max(
+        (sum(len(u) for u in reactions_map.get(str(m.id), {}).values()) for m in messages),
+        default=1,
+    )
+
+    def _bar(pct: int, color: str, label: str, value_str: str) -> str:
+        return f"""
+            <div class="score-row">
+              <span class="score-label">{label}</span>
+              <div class="score-track">
+                <div class="score-fill" style="width:{pct}%;background:{color}"></div>
+              </div>
+              <span class="score-val">{value_str}</span>
+            </div>"""
+
+    def _card(index: int, msg) -> str:
+        ts = msg.created_at.strftime("%Y-%m-%d %H:%M UTC")
+        author = _html.escape(msg.author.display_name)
+        content = _html.escape(msg.content or "").replace("\n", "<br>")
+        rxn = reactions_map.get(str(msg.id), {})
+        rxn_total = sum(len(u) for u in rxn.values())
+        msg_len = len(msg.content or "")
+
+        len_pct = min(int(msg_len / max_len * 100), 100)
+        rxn_pct = min(int(rxn_total / max_rxn * 100), 100) if max_rxn else 0
+
+        bars = _bar(len_pct, "#1f6feb", "length", str(msg_len))
+        if reactions_map:
+            bars += _bar(rxn_pct, "#3fb950", "reactions", str(rxn_total))
+
+        rxn_badges = " ".join(
+            f'<span class="badge" style="background:#313244;font-size:0.8em">'
+            f'{_html.escape(e)} {len(u)}</span>'
+            for e, u in rxn.items()
+        )
+
+        reply_badge = ""
+        if msg.reference:
+            reply_badge = f'<span class="badge bg-secondary ms-2">↩ reply</span>'
+
+        pinned_badge = '<span class="badge bg-warning text-dark ms-2">📌 pinned</span>' if msg.pinned else ""
+
+        att_links = " ".join(
+            f'<a href="{_html.escape(a.url)}" target="_blank" class="badge bg-secondary text-decoration-none">'
+            f'📎 {_html.escape(a.filename)}</a>'
+            for a in msg.attachments
+        )
+
+        return f"""
+        <div class="card mb-4 border-0 shadow-sm chunk-card">
+          <div class="card-header py-2">
+            <div class="d-flex justify-content-between align-items-start gap-3">
+              <div>
+                <span class="badge bg-primary font-monospace fs-6">[{index}] {author}</span>
+                {reply_badge}{pinned_badge}
+                <span class="text-muted ms-2" style="font-size:0.8em">{ts}</span>
+              </div>
+              <div class="score-block">{bars}</div>
+            </div>
+          </div>
+          <div class="card-body">
+            <pre class="chunk-pre mb-0"><code>{content}</code></pre>
+            {(f'<div class="mt-2">{rxn_badges}</div>') if rxn_badges else ""}
+            {(f'<div class="mt-2">{att_links}</div>') if att_links else ""}
+          </div>
+        </div>"""
+
+    cards = "".join(_card(i, m) for i, m in enumerate(messages, 1))
+    msg_count = len(messages)
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{_html.escape(thread_name)}</title>
+  <link rel="stylesheet"
+        href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+        crossorigin="anonymous">
+  <style>
+    body {{ background:#0d1117; color:#c9d1d9; font-family:'Segoe UI',system-ui,sans-serif }}
+    .card {{ background:#161b22; border:1px solid #30363d !important }}
+    .card-header {{ background:#1c2128; border-bottom:1px solid #30363d }}
+    pre.chunk-pre {{ background:#0d1117; border-radius:6px; padding:12px;
+                     color:#c9d1d9; white-space:pre-wrap; word-break:break-word;
+                     font-size:0.88rem; max-height:400px; overflow-y:auto }}
+    .score-block {{ min-width:200px }}
+    .score-row {{ display:flex; align-items:center; gap:6px; margin-bottom:3px }}
+    .score-label {{ width:60px; font-size:0.72rem; color:#8b949e; text-align:right }}
+    .score-track {{ flex:1; height:6px; background:#21262d; border-radius:3px; overflow:hidden }}
+    .score-fill {{ height:100%; border-radius:3px }}
+    .score-val {{ width:36px; font-size:0.72rem; color:#8b949e; font-family:monospace }}
+    .query-box {{ background:#161b22; border:1px solid #30363d; border-radius:8px; padding:20px 24px }}
+    .query-box .query-text {{ font-size:1.4rem; font-weight:600; color:#e6edf3 }}
+    .query-box .query-sub {{ font-family:monospace; font-size:0.85rem; color:#8b949e; margin-top:4px }}
+    a {{ color:#58a6ff }}
+  </style>
+</head>
+<body class="p-4">
+  <div class="container-xl">
+
+    <div class="query-box mb-4">
+      <div class="query-label text-uppercase fw-bold mb-2"
+           style="font-size:0.7rem;letter-spacing:.1em;color:#8b949e">THREAD</div>
+      <div class="query-text">{_html.escape(thread_name)}</div>
+      <div class="query-sub">{msg_count} messages</div>
+    </div>
+
+    <h6 class="text-uppercase fw-bold mb-3"
+        style="font-size:0.7rem;letter-spacing:.1em;color:#8b949e">MESSAGES</h6>
+    {cards}
+
+  </div>
+</body>
+</html>"""
+
+
 def message_to_dict(msg: discord.Message, reactions: dict = None) -> dict:
     """Convert a discord.Message to a serializable dict with full metadata."""
     return {
