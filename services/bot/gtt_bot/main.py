@@ -1,6 +1,9 @@
 import asyncio
 import logging
 import time
+import warnings
+
+warnings.filterwarnings("ignore", category=UserWarning, module="pydantic")
 
 import discord
 from discord import app_commands
@@ -92,8 +95,10 @@ async def send_answer(message: discord.Message, answer: str, sources: str) -> No
 
 @client.event
 async def on_ready() -> None:
-    await tree.sync()
-    log.info("Slash commands synced")
+    if not getattr(client, "_synced", False):
+        await tree.sync()
+        client._synced = True
+        log.info("Slash commands synced")
     log.info("Logged in as %s", client.user)
 
 
