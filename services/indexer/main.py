@@ -12,6 +12,7 @@ from llama_index.core.node_parser import SentenceSplitter
 from llama_index.embeddings.ollama import OllamaEmbedding
 from llama_index.vector_stores.qdrant import QdrantVectorStore
 from qdrant_client import QdrantClient
+from qdrant_client.models import CreateAlias, CreateAliasOperation
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("indexer")
@@ -42,6 +43,12 @@ def is_noise_chunk(text: str) -> bool:
     return False
 
 
+def _managed_physical_collections(client: QdrantClient, alias: str) -> list[str]:
+    """Collections matching the indexer's physical naming scheme (alias_<ts>)."""
+    prefix = f"{alias}_"
+    return [c.name for c in client.get_collections().collections if c.name.startswith(prefix)]
+
+
 def build_index():
     log.info("Building index from %s", VAULT_DIR)
 
@@ -51,7 +58,13 @@ def build_index():
     Settings.node_parser = SentenceSplitter(chunk_size=512, chunk_overlap=50)
 
     client = QdrantClient(url=QDRANT_HOST)
-    vector_store = QdrantVectorStore(client=client, collection_name=COLLECTION)
+
+    # Build into a freshly named physical collection. The alias COLLECTION is
+    # swapped to point at it at the end — readers querying via the alias see
+    # the previous index until the swap, so there is no unavailability window.
+    new_collection = f"{COLLECTION}_{int(time.time())}"
+
+    vector_store = QdrantVectorStore(client=client, collection_name=new_collection)
     storage_context = StorageContext.from_defaults(vector_store=vector_store)
 
     docs = SimpleDirectoryReader(
@@ -60,16 +73,43 @@ def build_index():
 
     log.info("Loaded %d markdown documents", len(docs))
 
-    # Parse nodes and filter out noise chunks before indexing
     parser = SentenceSplitter(chunk_size=512, chunk_overlap=50)
     nodes = parser.get_nodes_from_documents(docs)
     clean_nodes = [n for n in nodes if not is_noise_chunk(n.get_content())]
 
-    log.info("Indexing %d/%d chunks (filtered %d noise chunks)",
-             len(clean_nodes), len(nodes), len(nodes) - len(clean_nodes))
+    log.info("Indexing %d/%d chunks into %s (filtered %d noise chunks)",
+             len(clean_nodes), len(nodes), new_collection, len(nodes) - len(clean_nodes))
 
     VectorStoreIndex(clean_nodes, storage_context=storage_context)
-    log.info("Index build complete (collection=%s)", COLLECTION)
+
+    # Legacy migration: if a literal collection named COLLECTION still exists
+    # from before alias swap was introduced, drop it — Qdrant aliases and
+    # collection names share a namespace, so we can't create the alias while
+    # a collection of the same name occupies it.
+    existing_names = {c.name for c in client.get_collections().collections}
+    if COLLECTION in existing_names:
+        log.info("Removing legacy literal collection %s", COLLECTION)
+        client.delete_collection(collection_name=COLLECTION)
+
+    # Atomically (re)point the public alias at the freshly built collection.
+    client.update_aliases(change_aliases_operations=[
+        CreateAliasOperation(
+            create_alias=CreateAlias(
+                collection_name=new_collection,
+                alias_name=COLLECTION,
+            )
+        )
+    ])
+    log.info("Alias %s -> %s", COLLECTION, new_collection)
+
+    # Garbage-collect prior physical collections we built. Safe because the
+    # alias now points at new_collection, so nothing else references them.
+    for name in _managed_physical_collections(client, COLLECTION):
+        if name != new_collection:
+            client.delete_collection(collection_name=name)
+            log.info("Deleted stale collection %s", name)
+
+    log.info("Index build complete (alias=%s, collection=%s)", COLLECTION, new_collection)
 
 
 class DebouncedReindex(FileSystemEventHandler):
