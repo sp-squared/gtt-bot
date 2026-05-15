@@ -4,6 +4,10 @@ A local, containerized Discord bot for the [Goju Tech Talk (GTT)](https://youtub
 
 ---
 
+#### mtg_database Database Schema
+
+![screenshot](/img/gtt_bot_architecture.svg)
+
 ## Architecture
 
 ```
