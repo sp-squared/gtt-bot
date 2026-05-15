@@ -2,7 +2,6 @@ import asyncio
 import logging
 import time
 
-import anthropic
 import discord
 from discord import app_commands
 
@@ -180,10 +179,6 @@ async def on_message(message: discord.Message) -> None:
                 )
                 sources = format_sources(nodes) if nodes else ""
 
-            except anthropic.OverloadedError:
-                log.warning("Anthropic overloaded — all retries exhausted")
-                await message.reply("Anthropic is busy, try again in a moment.")
-                return
             except Exception:
                 log.exception("RAG pipeline failed")
                 await message.reply("Something went wrong answering that.")
