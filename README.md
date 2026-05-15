@@ -6,6 +6,14 @@ Also includes an MCP server for personal use with [Hermes Agent](https://github.
 
 ---
 
+#### mtg_database Database Schema
+
+![screenshot](/img/gtt_bot_architecture.svg)
+
+#### Hermes Integration
+
+![screenshot](/img/gtt_bot_architecture.svg)
+
 ## Architecture
 
 ```
