@@ -34,17 +34,22 @@ GENERAL_CHANNEL_ID = int(os.environ.get("GENERAL_CHANNEL_ID", "0"))
 NEW_ACCOUNT_DAYS = int(os.environ.get("NEW_ACCOUNT_DAYS", "7"))
 SUSPICIOUS_MSG_LENGTH = int(os.environ.get("SUSPICIOUS_MSG_LENGTH", "200"))
 REQUIRED_ROLE_FOR_AUTOMOD = os.environ.get("REQUIRED_ROLE", "GTT Sub Level 0").strip()
+TIMEOUT_LEAVE_WINDOW = int(os.environ.get("TIMEOUT_LEAVE_WINDOW", "600"))
 
 DEFAULT_USE_THREADS = os.environ.get("USE_THREADS", "true").lower() == "true"
 
 DISCORD_MSG_LIMIT = 2000
 
+SELF_PROMO_THRESHOLD = int(os.environ.get("SELF_PROMO_THRESHOLD", "2"))
+
 _raw_patterns = os.environ.get("SELF_PROMO_PATTERNS", "")
 if _raw_patterns:
-    _terms = [re.escape(t.strip()) for t in _raw_patterns.split(",") if t.strip()]
-    SELF_PROMO_PATTERNS = re.compile("|".join(f"\\b{t}\\b" for t in _terms), re.IGNORECASE) if _terms else None
+    SELF_PROMO_PATTERNS = [
+        (t.strip(), re.compile(f"\\b{re.escape(t.strip())}\\b", re.IGNORECASE))
+        for t in _raw_patterns.split(",") if t.strip()
+    ]
 else:
-    SELF_PROMO_PATTERNS = None
+    SELF_PROMO_PATTERNS = []
 
 SYSTEM_PROMPT = """You are the GTT Bot, the AI assistant for Goju Tech Talk (GTT). You run on claude-sonnet-4-5 (Claude Sonnet 4.5) via the Anthropic API. When asked what model you are, say claude-sonnet-4-5. Do not say Claude 3.5 Sonnet — that is a different model. — a community built around honest tech analysis, deep critical thinking, and the truth about AI, software engineering, and the future of programming. GTT brings together software engineers, scientists, technology enthusiasts, and curious minds who value intellectual honesty over hype.
 

@@ -53,3 +53,24 @@ async def send_mod_alert(
     )
     await mod_channel.send(alert)
     log.info("Automod alert sent for %s — rule: %s", member, rule)
+
+
+async def send_timeout_leave_alert(guild: discord.Guild, member: discord.Member, elapsed_seconds: float, rule: str):
+    """Alert mods when a timed-out member leaves the server shortly after."""
+    if not MOD_CHANNEL_ID:
+        return
+    mod_channel = guild.get_channel(MOD_CHANNEL_ID)
+    if not mod_channel:
+        return
+
+    minutes, seconds = divmod(int(elapsed_seconds), 60)
+    elapsed_str = f"{minutes}m {seconds}s" if minutes else f"{seconds}s"
+
+    alert = (
+        f"🚪 **Timed-out member left server**\n\n"
+        f"**User:** {member.mention} (`{member}` · ID: `{member.id}`)\n"
+        f"**Left:** {elapsed_str} after automod timeout\n"
+        f"**Original rule:** {rule}"
+    )
+    await mod_channel.send(alert)
+    log.info("Leave alert sent for %s — left %s after timeout", member, elapsed_str)

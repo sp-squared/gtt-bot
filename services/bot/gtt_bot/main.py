@@ -13,8 +13,10 @@ from gtt_bot.config import (
     MAX_QUESTION_LENGTH,
     REQUIRED_ROLE,
     THREAD_HISTORY_LIMIT,
+    TIMEOUT_LEAVE_WINDOW,
 )
 from gtt_bot.automod.rules import check_automod
+from gtt_bot.automod.alerts import send_timeout_leave_alert
 from gtt_bot.discord_utils.cooldown import check_cooldown
 from gtt_bot.discord_utils.permissions import (
     has_required_role,
@@ -93,6 +95,17 @@ async def on_ready() -> None:
     await tree.sync()
     log.info("Slash commands synced")
     log.info("Logged in as %s", client.user)
+
+
+@client.event
+async def on_member_remove(member: discord.Member) -> None:
+    entry = G.recent_timeouts.pop(member.id, None)
+    if entry is None:
+        return
+    timeout_ts, rule = entry
+    elapsed = time.time() - timeout_ts
+    if elapsed <= TIMEOUT_LEAVE_WINDOW:
+        await send_timeout_leave_alert(member.guild, member, elapsed, rule)
 
 
 @client.event

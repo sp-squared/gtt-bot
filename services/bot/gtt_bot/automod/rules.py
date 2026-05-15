@@ -1,11 +1,14 @@
 import logging
+import time
 from datetime import timedelta
 
 import discord
 
+import gtt_bot.globals as G
 from gtt_bot.config import (
     GENERAL_CHANNEL_ID,
     SELF_PROMO_PATTERNS,
+    SELF_PROMO_THRESHOLD,
     SUSPICIOUS_MSG_LENGTH,
     NEW_ACCOUNT_DAYS,
     REQUIRED_ROLE_FOR_AUTOMOD,
@@ -36,14 +39,12 @@ async def check_automod(message: discord.Message):
         rule = "`@everyone` / `@here` attempt"
         timeout_duration = timedelta(minutes=1)
 
-    # Rule 2: Self-promo in #general — 28-day timeout for all non-exempt members
-    elif (
-        message.channel.id == GENERAL_CHANNEL_ID
-        and SELF_PROMO_PATTERNS
-        and SELF_PROMO_PATTERNS.search(content)
-    ):
-        rule = "Self-promotion in `#general`"
-        timeout_duration = timedelta(days=28)
+    # Rule 2: Self-promo in #general — 28-day timeout when threshold patterns match
+    elif message.channel.id == GENERAL_CHANNEL_ID and SELF_PROMO_PATTERNS:
+        matched = [term for term, pattern in SELF_PROMO_PATTERNS if pattern.search(content)]
+        if len(matched) >= SELF_PROMO_THRESHOLD:
+            rule = f"Self-promotion in `#general` ({len(matched)} signals: {', '.join(f'`{m}`' for m in matched)})"
+            timeout_duration = timedelta(days=28)
 
     # Rule 3: New account + no role + long message in #general → flag only, no timeout
     if not rule and message.channel.id == GENERAL_CHANNEL_ID and len(content) > SUSPICIOUS_MSG_LENGTH:
@@ -70,6 +71,7 @@ async def check_automod(message: discord.Message):
         try:
             await member.timeout(timeout_duration, reason=f"Automod: {rule}")
             timed_out = True
+            G.recent_timeouts[member.id] = (time.time(), rule)
             log.info("Timed out %s for rule: %s", member, rule)
         except discord.Forbidden:
             me = member.guild.me
