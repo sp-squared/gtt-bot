@@ -1,6 +1,8 @@
 from anthropic import Anthropic
 
-from gtt_bot.config import ANTHROPIC_API_KEY, SYSTEM_PROMPT
+from gtt_bot.config import ANTHROPIC_API_KEY, ANTHROPIC_TIMEOUT, SYSTEM_PROMPT
+
+_client = Anthropic(api_key=ANTHROPIC_API_KEY, timeout=ANTHROPIC_TIMEOUT)
 
 
 def _enforce_alternation(messages: list) -> list:
@@ -24,7 +26,6 @@ def _enforce_alternation(messages: list) -> list:
 
 
 def query_anthropic(question: str, context: str, history: list = None) -> str:
-    ac = Anthropic(api_key=ANTHROPIC_API_KEY)
     prompt = (
         "Context from the GTT knowledge base:\n"
         "---------------------\n"
@@ -40,7 +41,7 @@ def query_anthropic(question: str, context: str, history: list = None) -> str:
     messages.append({"role": "user", "content": prompt})
     messages = _enforce_alternation(messages)
 
-    message = ac.messages.create(
+    message = _client.messages.create(
         model="claude-sonnet-4-5-20250929",
         max_tokens=1024,
         system=SYSTEM_PROMPT,

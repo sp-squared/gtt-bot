@@ -28,6 +28,8 @@ COOLDOWN_EXEMPT_ROLES = set(
 )
 MAX_QUESTION_LENGTH = int(os.environ.get("MAX_QUESTION_LENGTH", "500"))
 THREAD_HISTORY_LIMIT = int(os.environ.get("THREAD_HISTORY_LIMIT", "30"))
+ANTHROPIC_TIMEOUT = float(os.environ.get("ANTHROPIC_TIMEOUT", "30"))
+COOLDOWN_PRUNE_INTERVAL = int(os.environ.get("COOLDOWN_PRUNE_INTERVAL", "300"))
 
 MOD_CHANNEL_ID = int(os.environ.get("MOD_CHANNEL_ID", "0"))
 GENERAL_CHANNEL_ID = int(os.environ.get("GENERAL_CHANNEL_ID", "0"))

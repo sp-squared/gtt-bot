@@ -6,11 +6,14 @@ import warnings
 warnings.filterwarnings("ignore", category=UserWarning, module="pydantic")
 
 import discord
+from anthropic import APITimeoutError
 from discord import app_commands
 
 import gtt_bot.globals as G
 from gtt_bot.config import (
     COOLDOWN_ANTHROPIC,
+    COOLDOWN_LOCAL,
+    COOLDOWN_PRUNE_INTERVAL,
     DISCORD_MSG_LIMIT,
     DISCORD_TOKEN,
     MAX_QUESTION_LENGTH,
@@ -20,7 +23,7 @@ from gtt_bot.config import (
 )
 from gtt_bot.automod.rules import check_automod
 from gtt_bot.automod.alerts import send_timeout_leave_alert
-from gtt_bot.discord_utils.cooldown import check_cooldown
+from gtt_bot.discord_utils.cooldown import check_cooldown, prune_cooldowns
 from gtt_bot.discord_utils.permissions import (
     has_required_role,
     is_allowed_channel,
@@ -93,12 +96,30 @@ async def send_answer(message: discord.Message, answer: str, sources: str) -> No
 # Events
 # ---------------------------------------------------------------------------
 
+async def _cooldown_pruner() -> None:
+    """Periodically drop expired entries from the in-memory cooldown dicts."""
+    while True:
+        await asyncio.sleep(COOLDOWN_PRUNE_INTERVAL)
+        try:
+            pruned_a = prune_cooldowns(G.anthropic_cooldowns, COOLDOWN_ANTHROPIC)
+            pruned_l = prune_cooldowns(G.local_cooldowns, COOLDOWN_LOCAL)
+            if pruned_a or pruned_l:
+                log.debug(
+                    "Pruned cooldowns: anthropic=%d local=%d", pruned_a, pruned_l
+                )
+        except Exception:
+            log.exception("cooldown pruner iteration failed")
+
+
 @client.event
 async def on_ready() -> None:
     if not getattr(client, "_synced", False):
         await tree.sync()
         client._synced = True
         log.info("Slash commands synced")
+    if not getattr(client, "_pruner_started", False):
+        client._pruner_started = True
+        asyncio.create_task(_cooldown_pruner())
     log.info("Logged in as %s", client.user)
 
 
@@ -184,6 +205,12 @@ async def on_message(message: discord.Message) -> None:
                 )
                 sources = format_sources(nodes) if nodes else ""
 
+            except APITimeoutError:
+                log.warning("Anthropic call timed out for user %s", message.author.id)
+                await message.reply(
+                    "Anthropic took too long to respond — try again in a moment."
+                )
+                return
             except Exception:
                 log.exception("RAG pipeline failed")
                 await message.reply("Something went wrong answering that.")
