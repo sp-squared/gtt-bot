@@ -72,28 +72,6 @@ services:
     restart: unless-stopped
 
 
-  # --- Matrix / Element ---
-
-  synapse:
-    image: matrixdotorg/synapse:v1.72.0
-    container_name: gtt-synapse
-    ports:
-      - "127.0.0.1:8008:8008"
-    volumes:
-      - ./matrix:/data
-      - synapse_data:/data/media_store
-    environment:
-      SYNAPSE_CONFIG_PATH: /data/homeserver.yaml
-    restart: unless-stopped
-
-  element:
-    image: vectorim/element-web:v1.11.88
-    container_name: gtt-element
-    ports:
-      - "127.0.0.1:3000:80"
-    restart: unless-stopped
-
 volumes:
   ollama_data:
   qdrant_data:
-  synapse_data:
