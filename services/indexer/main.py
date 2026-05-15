@@ -7,7 +7,7 @@ from pathlib import Path
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
-from llama_index.core import SimpleDirectoryReader, StorageContext, VectorStoreIndex, Settings
+from llama_index.core import Document, StorageContext, VectorStoreIndex, Settings
 from llama_index.core.node_parser import SentenceSplitter
 from llama_index.embeddings.ollama import OllamaEmbedding
 from llama_index.vector_stores.qdrant import QdrantVectorStore
@@ -49,6 +49,31 @@ def _managed_physical_collections(client: QdrantClient, alias: str) -> list[str]
     return [c.name for c in client.get_collections().collections if c.name.startswith(prefix)]
 
 
+def load_vault_documents(vault_dir: str) -> list[Document]:
+    """One Document per .md file. Skips dotfiles and dotdirs (.obsidian, .trash, .git).
+
+    SimpleDirectoryReader was producing 2x the expected document count because its
+    default .md extractor (MarkdownReader) splits each file on H1 headers. For an
+    Obsidian vault each note is the logical unit, so we read it whole and let the
+    SentenceSplitter handle chunking.
+    """
+    root = Path(vault_dir)
+    docs: list[Document] = []
+    for path in root.rglob("*.md"):
+        if any(part.startswith(".") for part in path.relative_to(root).parts):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as e:
+            log.warning("Skipping %s: %s", path, e)
+            continue
+        docs.append(Document(
+            text=text,
+            metadata={"file_name": path.name, "file_path": str(path)},
+        ))
+    return docs
+
+
 def build_index():
     log.info("Building index from %s", VAULT_DIR)
 
@@ -67,9 +92,7 @@ def build_index():
     vector_store = QdrantVectorStore(client=client, collection_name=new_collection)
     storage_context = StorageContext.from_defaults(vector_store=vector_store)
 
-    docs = SimpleDirectoryReader(
-        VAULT_DIR, recursive=True, required_exts=[".md"]
-    ).load_data()
+    docs = load_vault_documents(VAULT_DIR)
 
     log.info("Loaded %d markdown documents", len(docs))
 
@@ -92,7 +115,7 @@ def build_index():
         client.delete_collection(collection_name=COLLECTION)
 
     # Atomically (re)point the public alias at the freshly built collection.
-    client.update_aliases(change_aliases_operations=[
+    client.update_collection_aliases(change_aliases_operations=[
         CreateAliasOperation(
             create_alias=CreateAlias(
                 collection_name=new_collection,
