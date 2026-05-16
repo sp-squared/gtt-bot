@@ -48,8 +48,9 @@ def setup(tree: app_commands.CommandTree) -> None:
         fetch_limit = None if limit == 0 else max(1, limit)
 
         await interaction.response.defer(ephemeral=True)
+        limit_display = "unlimited" if limit == 0 else limit
         await interaction.followup.send(
-            f"Exporting up to {limit} messages from {channel.mention} as `{format}`... this may take a moment.",
+            f"Exporting up to {limit_display} messages from {channel.mention} as `{format}`... this may take a moment.",
             ephemeral=True,
         )
 
