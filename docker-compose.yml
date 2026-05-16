@@ -68,7 +68,7 @@ services:
       SUSPICIOUS_MSG_LENGTH: ${SUSPICIOUS_MSG_LENGTH:-200}
     volumes:
       - ${VAULT_PATH}:/vault:ro
-      - C:/Users/colin/Documents/Merly/gtt-exports:/exports
+      - ./exports:/exports
     restart: unless-stopped
 
 
