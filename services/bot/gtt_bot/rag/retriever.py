@@ -83,6 +83,11 @@ def _keyword_score(terms: list[str], text: str, filename: str = "") -> float:
     else:
         fname_score = fname_matches / len(terms)
 
+    # Query fully describes the filename and filename is fully covered by the query —
+    # that is an exact match. Content is a supporting signal for partial matches only.
+    if fname_score >= 1.0:
+        return 1.0
+
     return 0.2 * (content_matches / len(terms)) + 0.8 * fname_score
 
 
