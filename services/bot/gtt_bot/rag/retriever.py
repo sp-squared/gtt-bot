@@ -58,17 +58,32 @@ def _keyword_score(terms: list[str], text: str, filename: str = "") -> float:
         1 for t in terms if re.search(r'\b' + re.escape(t) + r'\b', text_lower)
     )
     fname_matches = 0
+    acronym_match = False
     for t in terms:
         if re.search(r'\b' + re.escape(t) + r'\b', fname_text):
             fname_matches += 1
         elif len(t) >= 2 and fname_initials == t.lower():
             # Acronym match: "dif" → initials of "deterministic-intent-folding"
             fname_matches += 1
+            acronym_match = True
 
     # Filename match is a much stronger relevance signal than content mention.
     # A file whose name encodes the topic IS the authoritative source; a file that
     # merely mentions the topic is supporting context.
-    return 0.2 * (content_matches / len(terms)) + 0.8 * (fname_matches / len(terms))
+    #
+    # For word matches, require bidirectional coverage: the query must cover the
+    # filename AND the filename must cover the query. This prevents a single term
+    # like "test" from scoring 100% against "test-coverage-intent.md".
+    # Acronym matches are exempt — "dif" already represents the full filename.
+    if fname_matches > 0 and fname_words and not acronym_match:
+        sig_fname_words = [w for w in fname_words if len(w) >= 4 and w.lower() not in _STOP_WORDS]
+        fname_coverage = fname_matches / max(len(sig_fname_words), 1)
+        fname_query_ratio = fname_matches / len(terms)
+        fname_score = min(fname_coverage, fname_query_ratio)
+    else:
+        fname_score = fname_matches / len(terms)
+
+    return 0.2 * (content_matches / len(terms)) + 0.8 * fname_score
 
 
 def _is_gtt_question(terms: list[str]) -> bool:

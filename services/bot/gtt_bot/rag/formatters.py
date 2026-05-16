@@ -67,14 +67,18 @@ def format_exact_match(nodes: list) -> str:
         stem = source.replace(".md", "")
         all_chunks = [node] + extras.get(source, [])
 
-        # Concatenate lines across chunks, dropping duplicates from the 50-token overlap
+        # Concatenate lines across chunks, dropping duplicates from the 50-token overlap.
+        # Empty lines are always kept so paragraph breaks and spacing are preserved.
         combined: list[str] = []
         seen_lines: set[str] = set()
         for chunk in all_chunks:
             for line in chunk.get_content().strip().splitlines():
-                if line not in seen_lines:
-                    seen_lines.add(line)
-                    combined.append(line)
+                stripped = line.strip()
+                if stripped and stripped in seen_lines:
+                    continue
+                if stripped:
+                    seen_lines.add(stripped)
+                combined.append(line)
 
         if combined and combined[0].strip() == stem:
             combined = combined[1:]
