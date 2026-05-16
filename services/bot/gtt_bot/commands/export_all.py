@@ -6,6 +6,7 @@ import aiohttp
 import discord
 from discord import app_commands
 
+from gtt_bot.config import DISCORD_MSG_LIMIT
 from gtt_bot.export.core import download_attachments, export_channel_data
 from gtt_bot.rag.formatters import split_at_sentence
 
@@ -133,6 +134,6 @@ def setup(tree: app_commands.CommandTree) -> None:
                 pass  # Token may have expired — DM was already sent
         except discord.Forbidden:
             try:
-                await interaction.followup.send(summary[:2000], ephemeral=True)
+                await interaction.followup.send(summary[:DISCORD_MSG_LIMIT], ephemeral=True)
             except Exception:
                 log.warning("Could not send export-all summary — token expired and DMs disabled")

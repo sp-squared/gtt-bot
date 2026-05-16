@@ -5,6 +5,7 @@ from pathlib import Path
 import discord
 from discord import app_commands
 
+from gtt_bot.config import DISCORD_MSG_LIMIT
 from gtt_bot.export.core import download_attachments, extract_urls, fetch_reactions
 from gtt_bot.export.formatters import get_forwarded_content, message_to_dict, render_attachments_html, linkify
 from gtt_bot.export.state import load_export_state, save_export_state
@@ -219,6 +220,6 @@ def setup(tree: app_commands.CommandTree) -> None:
                 pass
         except discord.Forbidden:
             try:
-                await interaction.followup.send(summary[:2000], ephemeral=True)
+                await interaction.followup.send(summary[:DISCORD_MSG_LIMIT], ephemeral=True)
             except Exception:
                 log.warning("Could not send export-state summary — token expired and DMs disabled")
