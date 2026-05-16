@@ -30,7 +30,7 @@ async def get_thread_history(channel, client: discord.Client, limit: int = 30) -
                 if client.user:
                     text = text.replace(f"@{client.user.name}", "").strip()
                 if text:
-                    bot_related.append({"role": "user", "content": text})
+                    bot_related.append({"role": "user", "content": f"[{msg.author.display_name}]: {text}"})
 
         history = bot_related[-limit:]
 
