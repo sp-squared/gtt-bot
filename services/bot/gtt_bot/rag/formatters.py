@@ -43,6 +43,48 @@ def format_raw_chunks_plain(nodes: list) -> str:
     return "\n\n---\n\n".join(parts)
 
 
+def format_exact_match(nodes: list) -> str:
+    """Content-only output for exact (100% keyword score) matches — no summary section.
+
+    Accepts the full set of chunks for the matched file(s) (primary + _extra_chunk),
+    groups them by filename, and concatenates into one coherent block so sections
+    like 'Related:' that land in later chunks are preserved.
+    """
+    from collections import defaultdict
+
+    # Separate primary (best-scored) chunks from overflow chunks
+    primary: dict[str, object] = {}
+    extras: dict[str, list] = defaultdict(list)
+    for node in nodes:
+        fname = node.metadata.get("file_name", node.node_id)
+        if node.metadata.get("_extra_chunk"):
+            extras[fname].append(node)
+        else:
+            primary[fname] = node
+
+    parts = []
+    for source, node in primary.items():
+        stem = source.replace(".md", "")
+        all_chunks = [node] + extras.get(source, [])
+
+        # Concatenate lines across chunks, dropping duplicates from the 50-token overlap
+        combined: list[str] = []
+        seen_lines: set[str] = set()
+        for chunk in all_chunks:
+            for line in chunk.get_content().strip().splitlines():
+                if line not in seen_lines:
+                    seen_lines.add(line)
+                    combined.append(line)
+
+        if combined and combined[0].strip() == stem:
+            combined = combined[1:]
+
+        content = "\n".join(combined).strip()
+        quoted = "\n".join(f"> {line}" if line.strip() else ">" for line in content.splitlines())
+        parts.append(f"`{source}` — **100% match**\n{quoted}")
+    return "\n\n---\n\n".join(parts)
+
+
 def split_at_sentence(text: str, limit: int = 1950) -> list[str]:
     """Split text at sentence boundaries instead of hard cutting at limit."""
     if len(text) <= limit:

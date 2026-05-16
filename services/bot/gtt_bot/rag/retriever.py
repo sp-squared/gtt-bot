@@ -164,17 +164,41 @@ def retrieve_context(question: str) -> list:
             node.score = vector_weight * v + KEYWORD_WEIGHT * k
         nodes.sort(key=lambda n: n.score or 0, reverse=True)
 
-    # Deduplicate by source file — keep highest scoring chunk per file
+    # Files where any chunk scored a perfect keyword match — keep ALL their chunks
+    # so downstream formatters can reconstruct the full note (e.g. the Related section
+    # lives in a later chunk and would otherwise be lost to dedup).
+    exact_filenames = {
+        node.metadata.get("file_name", node.node_id)
+        for node in nodes
+        if node.metadata.get("_keyword_score", 0.0) >= 1.0
+    }
+
+    # Deduplicate: best chunk per non-exact file; all chunks for exact files
     seen_files: dict = {}
+    overflow: list = []  # lower-ranked chunks of exact-match files
     for node in nodes:
         fname = node.metadata.get("file_name", node.node_id)
-        if fname not in seen_files or (node.score or 0) > (seen_files[fname].score or 0):
+        if fname in exact_filenames:
+            existing = seen_files.get(fname)
+            if existing is None or (node.score or 0) > (existing.score or 0):
+                if existing is not None:
+                    overflow.append(existing)
+                seen_files[fname] = node
+            else:
+                overflow.append(node)
+        elif fname not in seen_files or (node.score or 0) > (seen_files[fname].score or 0):
             seen_files[fname] = node
 
     ranked = list(seen_files.values())
     results = [n for n in ranked[:TOP_K] if (n.score or 0) >= MIN_SCORE]
 
     if results:
+        # Append secondary chunks for exact-match files that made it into results
+        result_exact = {n.metadata.get("file_name") for n in results if n.metadata.get("_keyword_score", 0.0) >= 1.0}
+        for chunk in overflow:
+            if chunk.metadata.get("file_name") in result_exact:
+                chunk.metadata["_extra_chunk"] = True
+                results.append(chunk)
         return results
 
     # GTT fallback: lower threshold by 25% for GTT-specific questions so that
