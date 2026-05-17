@@ -4,6 +4,16 @@ import discord
 
 from gtt_bot.config import IMAGE_EXTS, CHANNEL_MENTION_RE, CLEAN_URL_RE
 
+HTML_STYLE = (
+    "body{font-family:sans-serif;background:#1e1e2e;color:#cdd6f4;padding:20px}"
+    "table{border-collapse:collapse;width:100%}td{padding:4px 8px;vertical-align:top;border-bottom:1px solid #313244}"
+    ".ts{color:#6c7086;white-space:nowrap;width:140px}.author{color:#89b4fa;width:160px;font-weight:bold}"
+    ".content{word-break:break-word}.rxn{background:#313244;border-radius:4px;padding:2px 6px;margin:2px;font-size:0.85em}"
+    "a{color:#89dceb}img{border:1px solid #313244}"
+    ".fwd{color:#a6adc8;border-left:3px solid #45475a;padding-left:8px;margin-top:4px;font-size:0.9em}"
+    ".reply-ref{color:#89b4fa;font-size:0.82em;border-left:3px solid #89b4fa;padding-left:6px;margin-bottom:3px}"
+)
+
 log = logging.getLogger("bot")
 
 
@@ -37,8 +47,15 @@ def get_forwarded_content(msg) -> str:
         return ""
 
 
+def att_and_sticker_str(msg) -> str:
+    """Text notation for attachments and stickers (for plain-text export lines)."""
+    parts = [f"[{a.filename}]" for a in msg.attachments]
+    parts += [f"[Sticker: {s.name}]" for s in msg.stickers]
+    return " ".join(parts) if parts else ""
+
+
 def render_attachments_html(msg, channel_name: str) -> str:
-    """Render attachments as inline images or clickable links with relative paths."""
+    """Render attachments and stickers as inline images or clickable links with relative paths."""
     parts = []
     for att in msg.attachments:
         safe_name = f"{msg.id}_{att.filename}"
@@ -53,6 +70,18 @@ def render_attachments_html(msg, channel_name: str) -> str:
             )
         else:
             parts.append(f"<a href=\"{rel_path}\" target=\"_blank\">&#128206; {att.filename}</a>")
+    for sticker in msg.stickers:
+        if sticker.format == discord.StickerFormatType.lottie:
+            parts.append(f'<span title="{sticker.name}">🎭 {sticker.name}</span>')
+        else:
+            ext = "gif" if sticker.format == discord.StickerFormatType.gif else "png"
+            rel_path = f"{channel_name}-attachments/sticker_{sticker.id}_{sticker.name}.{ext}"
+            parts.append(
+                f"<a href=\"{rel_path}\" target=\"_blank\">"
+                f"<img src=\"{rel_path}\" alt=\"Sticker: {sticker.name}\" "
+                f"style=\"max-width:160px;max-height:160px;display:block;margin:4px 0;border-radius:4px;\" "
+                f"onerror=\"this.style.display=&quot;none&quot;\"></a>"
+            )
     return " ".join(parts)
 
 
@@ -103,7 +132,7 @@ def format_thread_bootstrap_html(
     def _card(index: int, msg) -> str:
         ts = msg.created_at.strftime("%Y-%m-%d %H:%M UTC")
         author = _html.escape(msg.author.display_name)
-        content = _html.escape(msg.content or "").replace("\n", "<br>")
+        content = _html.escape(msg.system_content or msg.content or "").replace("\n", "<br>")
         rxn = reactions_map.get(str(msg.id), {})
         rxn_total = sum(len(u) for u in rxn.values())
         msg_len = len(msg.content or "")
@@ -133,6 +162,17 @@ def format_thread_bootstrap_html(
             for a in msg.attachments
         )
 
+        sticker_imgs = ""
+        for sticker in msg.stickers:
+            if sticker.format == discord.StickerFormatType.lottie:
+                sticker_imgs += f'<span class="badge bg-secondary ms-1">🎭 {_html.escape(sticker.name)}</span>'
+            else:
+                sticker_imgs += (
+                    f'<img src="{_html.escape(str(sticker.url))}" '
+                    f'alt="Sticker: {_html.escape(sticker.name)}" '
+                    f'style="max-width:160px;max-height:160px;display:block;margin:4px 0;border-radius:4px;">'
+                )
+
         return f"""
         <div class="card mb-4 border-0 shadow-sm chunk-card">
           <div class="card-header py-2">
@@ -147,6 +187,7 @@ def format_thread_bootstrap_html(
           </div>
           <div class="card-body">
             <pre class="chunk-pre mb-0"><code>{content}</code></pre>
+            {(f'<div class="mt-2">{sticker_imgs}</div>') if sticker_imgs else ""}
             {(f'<div class="mt-2">{rxn_badges}</div>') if rxn_badges else ""}
             {(f'<div class="mt-2">{att_links}</div>') if att_links else ""}
           </div>
@@ -202,9 +243,59 @@ def format_thread_bootstrap_html(
 </html>"""
 
 
+def build_html_rows(
+    messages: list,
+    reactions_map: dict,
+    channel_name: str,
+    messages_by_id: dict = None,
+) -> list[str]:
+    """Build HTML <tr> rows for a channel export table, including reply context."""
+    rows = []
+    for msg in messages:
+        ts = msg.created_at.strftime("%Y-%m-%d %H:%M")
+        author = discord.utils.escape_markdown(msg.author.display_name)
+
+        reply_html = ""
+        if msg.reference and msg.reference.message_id:
+            ref = (messages_by_id or {}).get(str(msg.reference.message_id))
+            if ref:
+                preview = discord.utils.escape_markdown((ref.content or "")[:80])
+                reply_html = (
+                    f'<div class="reply-ref">↩ <b>{discord.utils.escape_markdown(ref.author.display_name)}</b>'
+                    f": {linkify(preview)}</div>"
+                )
+            else:
+                reply_html = '<div class="reply-ref">↩ reply</div>'
+
+        fwd = get_forwarded_content(msg)
+        fwd_html = f'<div class="fwd">↩ {linkify(discord.utils.escape_markdown(fwd))}</div>' if fwd else ""
+        display_text = msg.system_content or msg.content or ""
+        body = reply_html + (linkify(discord.utils.escape_markdown(display_text)) if display_text else "") + fwd_html
+        rxn = reactions_map.get(str(msg.id), {})
+        rxn_str = " ".join(f'<span class="rxn">{e} {len(u)}</span>' for e, u in rxn.items())
+        att_html = render_attachments_html(msg, channel_name)
+        rows.append(
+            f'<tr><td class="ts">{ts}</td><td class="author">{author}</td>'
+            f'<td class="content">{body}{att_html} {rxn_str}</td></tr>'
+        )
+    return rows
+
+
+def build_html_document(title: str, rows: list[str], messages_count: int = None) -> str:
+    """Wrap HTML rows in a complete standalone HTML document."""
+    h2_text = f"#{title}" + (f" — {messages_count} messages" if messages_count is not None else "")
+    return (
+        f'<!DOCTYPE html>\n<html><head><meta charset="utf-8"><title>{title}</title>\n'
+        f"<style>{HTML_STYLE}</style></head><body>\n"
+        f"<h2>{h2_text}</h2>\n"
+        f'<table>{"".join(rows)}</table></body></html>'
+    )
+
+
 def message_to_dict(msg: discord.Message, reactions: dict = None) -> dict:
     """Convert a discord.Message to a serializable dict with full metadata."""
-    return {
+    sc = msg.system_content
+    record = {
         "id": str(msg.id),
         "timestamp": msg.created_at.isoformat(),
         "author": msg.author.display_name,
@@ -217,3 +308,6 @@ def message_to_dict(msg: discord.Message, reactions: dict = None) -> dict:
         "reactions": reactions or {},
         "pinned": msg.pinned,
     }
+    if sc and sc != msg.content:
+        record["system_content"] = sc
+    return record

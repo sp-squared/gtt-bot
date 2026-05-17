@@ -7,19 +7,15 @@ from discord import app_commands
 
 from gtt_bot.config import DISCORD_MSG_LIMIT
 from gtt_bot.export.core import download_attachments, extract_urls, fetch_reactions
-from gtt_bot.export.formatters import get_forwarded_content, message_to_dict, render_attachments_html, linkify
+from gtt_bot.export.formatters import (
+    get_forwarded_content, message_to_dict, linkify,
+    build_html_rows, build_html_document, format_thread_bootstrap_html,
+    att_and_sticker_str,
+)
 from gtt_bot.export.state import load_export_state, save_export_state
 from gtt_bot.rag.formatters import split_at_sentence
 
 log = logging.getLogger("bot")
-
-_HTML_STYLE = (
-    "body{font-family:sans-serif;background:#1e1e2e;color:#cdd6f4;padding:20px}"
-    "table{border-collapse:collapse;width:100%}td{padding:4px 8px;vertical-align:top;border-bottom:1px solid #313244}"
-    ".ts{color:#6c7086;white-space:nowrap;width:140px}.author{color:#89b4fa;width:160px;font-weight:bold}"
-    ".content{word-break:break-word}.rxn{background:#313244;border-radius:4px;padding:2px 6px;margin:2px;font-size:0.85em}"
-    "a{color:#89dceb}img{border:1px solid #313244}.fwd{color:#a6adc8;border-left:3px solid #45475a;padding-left:8px;margin-top:4px;font-size:0.9em}"
-)
 
 
 def setup(tree: app_commands.CommandTree) -> None:
@@ -125,8 +121,8 @@ def setup(tree: app_commands.CommandTree) -> None:
                             rxn_str = " " + " ".join(f"{e}({len(u)})" for e, u in rxn.items()) if rxn else ""
                             fwd = get_forwarded_content(msg)
                             fwd_str = f" [Forwarded: {fwd}]" if fwd else ""
-                            att_str = " ".join(f"[{a.filename}]" for a in msg.attachments) if msg.attachments else ""
-                            text = (msg.content or "") + ((" " + att_str) if att_str else "") + fwd_str
+                            att_str = att_and_sticker_str(msg)
+                            text = (msg.system_content or msg.content or "") + ((" " + att_str) if att_str else "") + fwd_str
                             lines_out.append(f"[{ts}] {msg.author.display_name}: {text}{rxn_str}")
                         new_content = "\n".join(lines_out)
                         if fpath.exists() and not is_bootstrap:
@@ -145,31 +141,16 @@ def setup(tree: app_commands.CommandTree) -> None:
                             fpath.write_text(json.dumps(records, indent=2, ensure_ascii=False), encoding="utf-8")
 
                     elif fmt == "html":
-                        rows = []
-                        for msg in messages:
-                            ts = msg.created_at.strftime("%Y-%m-%d %H:%M")
-                            author = discord.utils.escape_markdown(msg.author.display_name)
-                            fwd = get_forwarded_content(msg)
-                            fwd_html = f'<div class="fwd">↩ {linkify(discord.utils.escape_markdown(fwd))}</div>' if fwd else ""
-                            body = (linkify(discord.utils.escape_markdown(msg.content)) if msg.content else "") + fwd_html
-                            rxn = reactions_map.get(str(msg.id), {})
-                            rxn_str = " ".join(f'<span class="rxn">{e} {len(u)}</span>' for e, u in rxn.items())
-                            att_html = render_attachments_html(msg, channel.name)
-                            rows.append(
-                                f'<tr><td class="ts">{ts}</td><td class="author">{author}</td>'
-                                f'<td class="content">{body}{att_html} {rxn_str}</td></tr>'
-                            )
-                        new_rows = "\n".join(rows)
+                        msgs_by_id = {str(m.id): m for m in messages}
+                        rows = build_html_rows(messages, reactions_map, channel.name, msgs_by_id)
                         if fpath.exists() and not is_bootstrap:
                             existing = fpath.read_text(encoding="utf-8")
-                            fpath.write_text(existing.replace("</table>", new_rows + "\n</table>"), encoding="utf-8")
-                        else:
-                            html_out = (
-                                f'<!DOCTYPE html>\n<html><head><meta charset="utf-8"><title>{channel.name}</title>\n'
-                                f"<style>{_HTML_STYLE}</style></head><body>\n"
-                                f"<h2>#{channel.name}</h2><table>{new_rows}</table></body></html>"
+                            fpath.write_text(
+                                existing.replace("</table>", "\n".join(rows) + "\n</table>"),
+                                encoding="utf-8",
                             )
-                            fpath.write_text(html_out, encoding="utf-8")
+                        else:
+                            fpath.write_text(build_html_document(channel.name, rows), encoding="utf-8")
 
                 att_dir = latest_dir / f"{channel.name}-attachments"
                 att_count = await download_attachments(messages, att_dir)
@@ -187,8 +168,62 @@ def setup(tree: app_commands.CommandTree) -> None:
                         urls_file.write_text(urls_content, encoding="utf-8")
                     url_count = len(urls_content.splitlines())
 
+                # Threads (always full re-export — no incremental state per thread)
+                all_threads = list(channel.threads)
+                try:
+                    async for t in channel.archived_threads(limit=None):
+                        all_threads.append(t)
+                except Exception:
+                    pass
+
+                thread_count = 0
+                for thread in all_threads:
+                    thread_msgs = []
+                    try:
+                        async for tmsg in thread.history(limit=None, oldest_first=True):
+                            thread_msgs.append(tmsg)
+                    except Exception:
+                        log.warning("export-state: failed to fetch thread %s", thread.name)
+                        continue
+                    if not thread_msgs:
+                        continue
+
+                    threads_dir = latest_dir / f"{channel.name}-threads"
+                    threads_dir.mkdir(parents=True, exist_ok=True)
+                    safe_name = thread.name.replace("/", "-").replace("\\", "-")[:80]
+
+                    thread_rxn_map = {}
+                    if reactions == "yes":
+                        for tmsg in thread_msgs:
+                            if tmsg.reactions:
+                                thread_rxn_map[str(tmsg.id)] = await fetch_reactions(tmsg)
+
+                    for tfmt in formats_to_write:
+                        if tfmt == "text":
+                            lines_t = []
+                            for tmsg in thread_msgs:
+                                ts = tmsg.created_at.strftime("%Y-%m-%d %H:%M")
+                                rxn = thread_rxn_map.get(str(tmsg.id), {})
+                                rxn_str = " " + " ".join(f"{e}({len(u)})" for e, u in rxn.items()) if rxn else ""
+                                fwd = get_forwarded_content(tmsg)
+                                fwd_str = f" [Forwarded: {fwd}]" if fwd else ""
+                                att_str = att_and_sticker_str(tmsg)
+                                text = (tmsg.system_content or tmsg.content or "") + ((" " + att_str) if att_str else "") + fwd_str
+                                lines_t.append(f"[{ts}] {tmsg.author.display_name}: {text}{rxn_str}")
+                            (threads_dir / f"{safe_name}.txt").write_text("\n".join(lines_t), encoding="utf-8")
+                        elif tfmt == "json":
+                            records_t = [message_to_dict(tmsg, thread_rxn_map.get(str(tmsg.id))) for tmsg in thread_msgs]
+                            (threads_dir / f"{safe_name}.json").write_text(
+                                json.dumps(records_t, indent=2, ensure_ascii=False), encoding="utf-8"
+                            )
+                        elif tfmt == "html":
+                            html_content = format_thread_bootstrap_html(thread.name, thread_msgs, thread_rxn_map)
+                            (threads_dir / f"{safe_name}.html").write_text(html_content, encoding="utf-8")
+
+                    thread_count += 1
+
                 exported.append(
-                    f"{channel.name} ({len(messages)} new msgs, {att_count} att, {url_count} urls)"
+                    f"{channel.name} ({len(messages)} new msgs, {att_count} att, {url_count} urls, {thread_count} threads)"
                 )
                 log.info("export-state %s — %d new messages", channel.name, len(messages))
 

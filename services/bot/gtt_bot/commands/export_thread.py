@@ -7,17 +7,9 @@ import discord
 from discord import app_commands
 
 from gtt_bot.export.core import fetch_reactions
-from gtt_bot.export.formatters import get_forwarded_content, linkify, message_to_dict, render_attachments_html
+from gtt_bot.export.formatters import get_forwarded_content, message_to_dict, format_thread_bootstrap_html, att_and_sticker_str
 
 log = logging.getLogger("bot")
-
-_HTML_STYLE = (
-    "body{font-family:sans-serif;background:#1e1e2e;color:#cdd6f4;padding:20px}"
-    "table{border-collapse:collapse;width:100%}td{padding:4px 8px;vertical-align:top;border-bottom:1px solid #313244}"
-    ".ts{color:#6c7086;white-space:nowrap;width:140px}.author{color:#89b4fa;width:160px;font-weight:bold}"
-    ".content{word-break:break-word}.rxn{background:#313244;border-radius:4px;padding:2px 6px;margin:2px;font-size:0.85em}"
-    "a{color:#89dceb}img{border:1px solid #313244}.fwd{color:#a6adc8;border-left:3px solid #45475a;padding-left:8px;margin-top:4px;font-size:0.9em}"
-)
 
 
 def setup(tree: app_commands.CommandTree) -> None:
@@ -64,7 +56,8 @@ def setup(tree: app_commands.CommandTree) -> None:
                 pass
 
         async for msg in thread.history(limit=None, oldest_first=True):
-            messages.append(msg)
+            if msg.type != discord.MessageType.thread_starter_message:
+                messages.append(msg)
 
         if not messages:
             await interaction.followup.send("This thread has no messages.", ephemeral=True)
@@ -78,7 +71,6 @@ def setup(tree: app_commands.CommandTree) -> None:
                     reactions_map[str(msg.id)] = await fetch_reactions(msg)
 
         filename_base = "thread-GTT-Bot"
-        safe_name = "thread-GTT-Bot"
 
         # Build export content
         if format == "text":
@@ -89,8 +81,11 @@ def setup(tree: app_commands.CommandTree) -> None:
                 rxn_str = " " + " ".join(f"{e}({len(u)})" for e, u in rxn.items()) if rxn else ""
                 fwd = get_forwarded_content(msg)
                 fwd_str = f" [Forwarded: {fwd}]" if fwd else ""
-                att_str = " ".join(f"[{a.filename}]" for a in msg.attachments) if msg.attachments else ""
-                text = (msg.content or "") + ((" " + att_str) if att_str else "") + fwd_str
+                att_str = att_and_sticker_str(msg)
+                text = (msg.system_content or msg.content or "") + ((" " + att_str) if att_str else "") + fwd_str
+                if not text.strip():
+                    msg_type = getattr(msg.type, "name", str(msg.type)) if msg.type else "unknown"
+                    text = f"[system: {msg_type}]"
                 lines.append(f"[{ts}] {msg.author.display_name}: {text}{rxn_str}")
             content = "\n".join(lines).encode("utf-8")
             ext = "txt"
@@ -101,27 +96,7 @@ def setup(tree: app_commands.CommandTree) -> None:
             ext = "json"
 
         elif format == "html":
-            rows = []
-            for msg in messages:
-                ts = msg.created_at.strftime("%Y-%m-%d %H:%M")
-                author = discord.utils.escape_markdown(msg.author.display_name)
-                fwd = get_forwarded_content(msg)
-                fwd_html = f'<div class="fwd">↩ {linkify(discord.utils.escape_markdown(fwd))}</div>' if fwd else ""
-                body = (linkify(discord.utils.escape_markdown(msg.content)) if msg.content else "") + fwd_html
-                rxn = reactions_map.get(str(msg.id), {})
-                rxn_str = " ".join(f'<span class="rxn">{e} {len(u)}</span>' for e, u in rxn.items())
-                att_html = render_attachments_html(msg, safe_name)
-                rows.append(
-                    f'<tr><td class="ts">{ts}</td><td class="author">{author}</td>'
-                    f'<td class="content">{body}{att_html} {rxn_str}</td></tr>'
-                )
-            html = (
-                f'<!DOCTYPE html>\n<html><head><meta charset="utf-8"><title>{thread.name}</title>\n'
-                f"<style>{_HTML_STYLE}</style></head><body>\n"
-                f"<h2>{thread.name} — {len(messages)} messages</h2>\n"
-                f'<table>{"".join(rows)}</table></body></html>'
-            )
-            content = html.encode("utf-8")
+            content = format_thread_bootstrap_html(thread.name, messages, reactions_map).encode("utf-8")
             ext = "html"
 
         # Zip and send via DM
