@@ -17,6 +17,17 @@ HTML_STYLE = (
 log = logging.getLogger("bot")
 
 
+def is_forward(msg) -> bool:
+    """Return True if this message is a Discord forward (has message_snapshots)."""
+    snapshots = getattr(msg, "message_snapshots", None)
+    if snapshots:
+        return True
+    raw = getattr(msg, "_raw_data", None)
+    if isinstance(raw, dict) and raw.get("message_snapshots"):
+        return True
+    return False
+
+
 def get_forwarded_content(msg) -> str:
     """Extract content from forwarded messages using discord.py v2.5+ MessageSnapshot."""
     try:
@@ -162,9 +173,20 @@ def format_thread_bootstrap_html(
             for e, u in rxn.items()
         )
 
+        fwd_content = get_forwarded_content(msg)
         reply_badge = ""
-        if msg.reference:
-            reply_badge = f'<span class="badge bg-secondary ms-2">↩ reply</span>'
+        fwd_badge = ""
+        fwd_block = ""
+        if is_forward(msg):
+            fwd_badge = '<span class="badge bg-info text-dark ms-2">⤷ forwarded</span>'
+            if fwd_content:
+                escaped_fwd = _html.escape(fwd_content)
+                fwd_block = (
+                    f'<div class="mt-2 p-2" style="border-left:3px solid #58a6ff;'
+                    f'background:#0d1117;font-size:0.85em;color:#8b949e">{escaped_fwd}</div>'
+                )
+        elif msg.reference:
+            reply_badge = '<span class="badge bg-secondary ms-2">↩ reply</span>'
 
         pinned_badge = '<span class="badge bg-warning text-dark ms-2">📌 pinned</span>' if msg.pinned else ""
 
@@ -191,13 +213,14 @@ def format_thread_bootstrap_html(
             <div class="d-flex justify-content-between align-items-start gap-3">
               <div>
                 <span class="badge bg-primary font-monospace fs-6">[{index}] {author}</span>
-                {reply_badge}{pinned_badge}
+                {reply_badge}{fwd_badge}{pinned_badge}
                 <span class="text-muted ms-2" style="font-size:0.8em">{ts}</span>
               </div>
               <div class="score-block">{bars}</div>
             </div>
           </div>
           <div class="card-body">
+            {fwd_block}
             <pre class="chunk-pre mb-0"><code>{content}</code></pre>
             {(f'<div class="mt-2">{sticker_imgs}</div>') if sticker_imgs else ""}
             {(f'<div class="mt-2">{rxn_badges}</div>') if rxn_badges else ""}
@@ -334,8 +357,11 @@ def build_html_rows(
         ts = msg.created_at.strftime("%Y-%m-%d %H:%M")
         author = discord.utils.escape_markdown(msg.author.display_name)
 
+        fwd = get_forwarded_content(msg)
+        fwd_html = f'<div class="fwd">⤷ {linkify(discord.utils.escape_markdown(fwd))}</div>' if fwd else ""
+
         reply_html = ""
-        if msg.reference and msg.reference.message_id:
+        if msg.reference and msg.reference.message_id and not is_forward(msg):
             ref = (messages_by_id or {}).get(str(msg.reference.message_id))
             if ref:
                 preview = discord.utils.escape_markdown(resolve_mentions((ref.content or "")[:80], ref))
@@ -345,9 +371,6 @@ def build_html_rows(
                 )
             else:
                 reply_html = '<div class="reply-ref">↩ reply</div>'
-
-        fwd = get_forwarded_content(msg)
-        fwd_html = f'<div class="fwd">↩ {linkify(discord.utils.escape_markdown(fwd))}</div>' if fwd else ""
         display_text = resolve_mentions(msg.system_content or msg.content or "", msg)
         body = reply_html + (linkify(discord.utils.escape_markdown(display_text)) if display_text else "") + fwd_html
         rxn = reactions_map.get(str(msg.id), {})
