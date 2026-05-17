@@ -9,7 +9,7 @@ from gtt_bot.config import URL_RE
 from gtt_bot.export.formatters import (
     get_forwarded_content, render_attachments_html, message_to_dict, linkify,
     build_html_rows, build_html_document, format_thread_bootstrap_html,
-    att_and_sticker_str,
+    att_and_sticker_str, resolve_mentions,
 )
 
 log = logging.getLogger("bot")
@@ -149,7 +149,7 @@ async def export_channel_data(
                 att_str = att_and_sticker_str(msg)
                 fwd = get_forwarded_content(msg)
                 fwd_str = f" [Forwarded: {fwd}]" if fwd else ""
-                text = (msg.system_content or msg.content or "") + ((" " + att_str) if att_str else "") + fwd_str
+                text = resolve_mentions(msg.system_content or msg.content or "", msg) + ((" " + att_str) if att_str else "") + fwd_str
                 lines.append(f"[{ts}] {msg.author.display_name}: {text}")
             (threads_dir / f"{safe_name}.txt").write_text("\n".join(lines), encoding="utf-8")
         thread_count += 1
@@ -181,7 +181,7 @@ async def export_channel_data(
             att_str = att_and_sticker_str(msg)
             fwd = get_forwarded_content(msg)
             fwd_str = f" [Forwarded: {fwd}]" if fwd else ""
-            text = (msg.system_content or msg.content or "") + ((" " + att_str) if att_str else "") + fwd_str
+            text = resolve_mentions(msg.system_content or msg.content or "", msg) + ((" " + att_str) if att_str else "") + fwd_str
             if not text.strip():
                 msg_type = getattr(msg.type, "name", str(msg.type)) if msg.type else "unknown"
                 text = f"[system: {msg_type}]"

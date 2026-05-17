@@ -2,7 +2,7 @@ import logging
 
 import discord
 
-from gtt_bot.config import IMAGE_EXTS, CHANNEL_MENTION_RE, CLEAN_URL_RE
+from gtt_bot.config import IMAGE_EXTS, CHANNEL_MENTION_RE, CLEAN_URL_RE, USER_MENTION_RE, ROLE_MENTION_RE
 
 HTML_STYLE = (
     "body{font-family:sans-serif;background:#1e1e2e;color:#cdd6f4;padding:20px}"
@@ -45,6 +45,21 @@ def get_forwarded_content(msg) -> str:
     except Exception as e:
         log.debug("get_forwarded_content failed: %s", e)
         return ""
+
+
+def resolve_mentions(content: str, msg) -> str:
+    """Replace <@USER_ID> and <@&ROLE_ID> with @DisplayName / @RoleName."""
+    if not content:
+        return content
+    user_map = {str(m.id): m.display_name for m in msg.mentions}
+    role_map = {str(r.id): r.name for r in getattr(msg, "role_mentions", [])}
+    content = USER_MENTION_RE.sub(
+        lambda m: f"@{user_map.get(m.group(1), m.group(1))}", content
+    )
+    content = ROLE_MENTION_RE.sub(
+        lambda m: f"@{role_map.get(m.group(1), m.group(1))}", content
+    )
+    return content
 
 
 def att_and_sticker_str(msg) -> str:
@@ -132,7 +147,7 @@ def format_thread_bootstrap_html(
     def _card(index: int, msg) -> str:
         ts = msg.created_at.strftime("%Y-%m-%d %H:%M UTC")
         author = _html.escape(msg.author.display_name)
-        content = _html.escape(msg.system_content or msg.content or "").replace("\n", "<br>")
+        content = _html.escape(resolve_mentions(msg.system_content or msg.content or "", msg)).replace("\n", "<br>")
         rxn = reactions_map.get(str(msg.id), {})
         rxn_total = sum(len(u) for u in rxn.values())
         msg_len = len(msg.content or "")
@@ -259,7 +274,7 @@ def build_html_rows(
         if msg.reference and msg.reference.message_id:
             ref = (messages_by_id or {}).get(str(msg.reference.message_id))
             if ref:
-                preview = discord.utils.escape_markdown((ref.content or "")[:80])
+                preview = discord.utils.escape_markdown(resolve_mentions((ref.content or "")[:80], ref))
                 reply_html = (
                     f'<div class="reply-ref">↩ <b>{discord.utils.escape_markdown(ref.author.display_name)}</b>'
                     f": {linkify(preview)}</div>"
@@ -269,7 +284,7 @@ def build_html_rows(
 
         fwd = get_forwarded_content(msg)
         fwd_html = f'<div class="fwd">↩ {linkify(discord.utils.escape_markdown(fwd))}</div>' if fwd else ""
-        display_text = msg.system_content or msg.content or ""
+        display_text = resolve_mentions(msg.system_content or msg.content or "", msg)
         body = reply_html + (linkify(discord.utils.escape_markdown(display_text)) if display_text else "") + fwd_html
         rxn = reactions_map.get(str(msg.id), {})
         rxn_str = " ".join(f'<span class="rxn">{e} {len(u)}</span>' for e, u in rxn.items())

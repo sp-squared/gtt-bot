@@ -10,7 +10,7 @@ from gtt_bot.export.core import download_attachments, extract_urls, fetch_reacti
 from gtt_bot.export.formatters import (
     get_forwarded_content, message_to_dict, linkify,
     build_html_rows, build_html_document, format_thread_bootstrap_html,
-    att_and_sticker_str,
+    att_and_sticker_str, resolve_mentions,
 )
 from gtt_bot.export.state import load_export_state, save_export_state
 from gtt_bot.rag.formatters import split_at_sentence
@@ -122,7 +122,7 @@ def setup(tree: app_commands.CommandTree) -> None:
                             fwd = get_forwarded_content(msg)
                             fwd_str = f" [Forwarded: {fwd}]" if fwd else ""
                             att_str = att_and_sticker_str(msg)
-                            text = (msg.system_content or msg.content or "") + ((" " + att_str) if att_str else "") + fwd_str
+                            text = resolve_mentions(msg.system_content or msg.content or "", msg) + ((" " + att_str) if att_str else "") + fwd_str
                             lines_out.append(f"[{ts}] {msg.author.display_name}: {text}{rxn_str}")
                         new_content = "\n".join(lines_out)
                         if fpath.exists() and not is_bootstrap:
@@ -150,7 +150,7 @@ def setup(tree: app_commands.CommandTree) -> None:
                                 encoding="utf-8",
                             )
                         else:
-                            fpath.write_text(build_html_document(channel.name, rows), encoding="utf-8")
+                            fpath.write_text(build_html_document(channel.name, rows, len(messages)), encoding="utf-8")
 
                 att_dir = latest_dir / f"{channel.name}-attachments"
                 att_count = await download_attachments(messages, att_dir)
@@ -208,7 +208,7 @@ def setup(tree: app_commands.CommandTree) -> None:
                                 fwd = get_forwarded_content(tmsg)
                                 fwd_str = f" [Forwarded: {fwd}]" if fwd else ""
                                 att_str = att_and_sticker_str(tmsg)
-                                text = (tmsg.system_content or tmsg.content or "") + ((" " + att_str) if att_str else "") + fwd_str
+                                text = resolve_mentions(tmsg.system_content or tmsg.content or "", tmsg) + ((" " + att_str) if att_str else "") + fwd_str
                                 lines_t.append(f"[{ts}] {tmsg.author.display_name}: {text}{rxn_str}")
                             (threads_dir / f"{safe_name}.txt").write_text("\n".join(lines_t), encoding="utf-8")
                         elif tfmt == "json":

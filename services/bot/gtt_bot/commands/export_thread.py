@@ -7,7 +7,7 @@ import discord
 from discord import app_commands
 
 from gtt_bot.export.core import fetch_reactions
-from gtt_bot.export.formatters import get_forwarded_content, message_to_dict, format_thread_bootstrap_html, att_and_sticker_str
+from gtt_bot.export.formatters import get_forwarded_content, message_to_dict, format_thread_bootstrap_html, att_and_sticker_str, resolve_mentions
 
 log = logging.getLogger("bot")
 
@@ -82,7 +82,7 @@ def setup(tree: app_commands.CommandTree) -> None:
                 fwd = get_forwarded_content(msg)
                 fwd_str = f" [Forwarded: {fwd}]" if fwd else ""
                 att_str = att_and_sticker_str(msg)
-                text = (msg.system_content or msg.content or "") + ((" " + att_str) if att_str else "") + fwd_str
+                text = resolve_mentions(msg.system_content or msg.content or "", msg) + ((" " + att_str) if att_str else "") + fwd_str
                 if not text.strip():
                     msg_type = getattr(msg.type, "name", str(msg.type)) if msg.type else "unknown"
                     text = f"[system: {msg_type}]"

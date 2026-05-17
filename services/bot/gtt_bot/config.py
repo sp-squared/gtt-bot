@@ -262,3 +262,5 @@ IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg"}
 URL_RE = re.compile(r"https?://\S+")
 CHANNEL_MENTION_RE = re.compile(r"<#\d+>")
 CLEAN_URL_RE = re.compile(r"https?://[^\s]+")
+USER_MENTION_RE = re.compile(r"<@!?(\d+)>")
+ROLE_MENTION_RE = re.compile(r"<@&(\d+)>")
