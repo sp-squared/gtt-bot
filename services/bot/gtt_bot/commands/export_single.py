@@ -3,19 +3,20 @@ import logging
 import tempfile
 import zipfile
 from pathlib import Path
+from typing import Union
 
 import discord
 from discord import app_commands
 
-from gtt_bot.export.core import export_channel_data
+from gtt_bot.export.core import export_channel_data, export_forum_data
 
 log = logging.getLogger("bot")
 
 
 def setup(tree: app_commands.CommandTree) -> None:
-    @tree.command(name="export", description="Export channel history to a file (GTT Team only)")
+    @tree.command(name="export", description="Export channel or forum history to a file (GTT Team only)")
     @app_commands.describe(
-        channel="Channel to export",
+        channel="Channel or forum to export",
         format="Output format: text, json, or html",
         limit="Number of messages to export (default 500, 0 = unlimited)",
         reactions="Include reactions (slower, default: yes)",
@@ -31,7 +32,7 @@ def setup(tree: app_commands.CommandTree) -> None:
     ])
     async def export(
         interaction: discord.Interaction,
-        channel: discord.TextChannel,
+        channel: Union[discord.TextChannel, discord.ForumChannel],
         format: str,
         limit: int = 500,
         reactions: str = "yes",
@@ -54,17 +55,30 @@ def setup(tree: app_commands.CommandTree) -> None:
             ephemeral=True,
         )
 
+        is_forum = isinstance(channel, discord.ForumChannel)
+
         try:
             with tempfile.TemporaryDirectory() as tmpdir:
                 tmpdir = Path(tmpdir)
                 channel_dir = tmpdir / channel.name
-                stats = await export_channel_data(
-                    channel, channel_dir, format, fetch_limit,
-                    fetch_reactions_flag=(reactions == "yes"),
-                )
 
-                if stats["messages"] == 0:
-                    await interaction.followup.send("No messages found in that channel.", ephemeral=True)
+                if is_forum:
+                    stats = await export_forum_data(
+                        channel, channel_dir, format, fetch_limit,
+                        fetch_reactions_flag=(reactions == "yes"),
+                    )
+                    empty = stats["threads"] == 0
+                    empty_msg = "No posts found in that forum."
+                else:
+                    stats = await export_channel_data(
+                        channel, channel_dir, format, fetch_limit,
+                        fetch_reactions_flag=(reactions == "yes"),
+                    )
+                    empty = stats["messages"] == 0
+                    empty_msg = "No messages found in that channel."
+
+                if empty:
+                    await interaction.followup.send(empty_msg, ephemeral=True)
                     return
 
                 timestamp = discord.utils.utcnow().strftime("%Y%m%d-%H%M%S")
@@ -85,12 +99,19 @@ def setup(tree: app_commands.CommandTree) -> None:
                 zip_file = discord.File(io.BytesIO(zip_bytes), filename=zip_path.name)
                 try:
                     dm = await interaction.user.create_dm()
-                    await dm.send(
-                        f"Export of #{channel.name} — {stats['messages']} messages, "
-                        f"{stats['attachments']} attachments, {stats['urls']} urls, "
-                        f"{stats['threads']} threads, {stats['pinned']} pinned ({format})",
-                        file=zip_file,
-                    )
+                    if is_forum:
+                        dm_text = (
+                            f"Export of forum #{channel.name} — {stats['threads']} posts, "
+                            f"{stats['messages']} msgs, {stats['attachments']} att, "
+                            f"{stats['urls']} urls ({format})"
+                        )
+                    else:
+                        dm_text = (
+                            f"Export of #{channel.name} — {stats['messages']} messages, "
+                            f"{stats['attachments']} attachments, {stats['urls']} urls, "
+                            f"{stats['threads']} threads, {stats['pinned']} pinned ({format})"
+                        )
+                    await dm.send(dm_text, file=zip_file)
                     await interaction.followup.send("Export sent to your DMs.", ephemeral=True)
                     log.info("Exported %s stats=%s for %s", channel.name, stats, interaction.user)
                 except discord.Forbidden:

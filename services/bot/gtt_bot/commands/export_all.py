@@ -7,7 +7,7 @@ import discord
 from discord import app_commands
 
 from gtt_bot.config import DISCORD_MSG_LIMIT
-from gtt_bot.export.core import download_attachments, export_channel_data
+from gtt_bot.export.core import download_attachments, export_channel_data, export_forum_data
 from gtt_bot.rag.formatters import split_at_sentence
 
 log = logging.getLogger("bot")
@@ -113,6 +113,29 @@ def setup(tree: app_commands.CommandTree) -> None:
             except Exception:
                 skipped.append(channel.name)
                 log.exception("Failed to export channel %s", channel.name)
+
+        for channel in [c for c in guild.channels if isinstance(c, discord.ForumChannel)]:
+            perms = channel.permissions_for(guild.me)
+            if not perms.read_messages or not perms.read_message_history:
+                skipped.append(f"{channel.name} (forum)")
+                continue
+
+            try:
+                stats = await export_forum_data(
+                    channel, export_root, format, fetch_limit,
+                    fetch_reactions_flag=(reactions == "yes"),
+                )
+                if stats["threads"] == 0:
+                    skipped.append(f"{channel.name} (forum)")
+                    continue
+                exported.append(
+                    f"{channel.name} (forum: {stats['threads']} posts, {stats['messages']} msgs, "
+                    f"{stats['attachments']} att, {stats['urls']} urls)"
+                )
+                log.info("Exported forum %s — %s", channel.name, stats)
+            except Exception:
+                skipped.append(f"{channel.name} (forum)")
+                log.exception("Failed to export forum %s", channel.name)
 
         summary = (
             f"**Export complete** — saved to `{export_root}`\n\n"

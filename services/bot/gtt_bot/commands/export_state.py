@@ -6,7 +6,7 @@ import discord
 from discord import app_commands
 
 from gtt_bot.config import DISCORD_MSG_LIMIT
-from gtt_bot.export.core import download_attachments, extract_urls, fetch_reactions
+from gtt_bot.export.core import download_attachments, extract_urls, fetch_reactions, export_forum_data
 from gtt_bot.export.formatters import (
     get_forwarded_content, message_to_dict, linkify,
     build_html_rows, build_html_document, format_thread_bootstrap_html,
@@ -233,6 +233,29 @@ def setup(tree: app_commands.CommandTree) -> None:
 
         state.update(new_state)
         save_export_state(state)
+
+        # Forum channels — always full re-export (no incremental state per post)
+        for channel in [c for c in guild.channels if isinstance(c, discord.ForumChannel)]:
+            perms = channel.permissions_for(guild.me)
+            if not perms.read_messages or not perms.read_message_history:
+                skipped.append(f"{channel.name} (forum)")
+                continue
+            try:
+                for fmt in formats_to_write:
+                    stats = await export_forum_data(
+                        channel, latest_dir, fmt, None,
+                        fetch_reactions_flag=(reactions == "yes"),
+                    )
+                if stats["threads"] == 0:
+                    skipped.append(f"{channel.name} (forum)")
+                else:
+                    exported.append(
+                        f"{channel.name} (forum: {stats['threads']} posts, {stats['messages']} msgs)"
+                    )
+                    log.info("export-state forum %s — %s", channel.name, stats)
+            except Exception:
+                skipped.append(f"{channel.name} (forum)")
+                log.exception("export-state failed for forum %s", channel.name)
 
         mode = "Bootstrap" if is_bootstrap else "Incremental"
         summary = (

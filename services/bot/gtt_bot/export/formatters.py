@@ -120,12 +120,9 @@ def format_thread_bootstrap_html(
     thread_name: str,
     messages: list,
     reactions_map: dict,
+    tags: list = None,
 ) -> str:
-    """Render an exported thread as a self-contained Bootstrap 5 HTML file.
-
-    Mirrors the knowledge-base Bootstrap output: dark card layout, per-message
-    metric bars showing reaction totals and message length relative to the thread max.
-    """
+    """Render an exported thread/forum post as a self-contained Bootstrap 5 HTML file."""
     import html as _html
 
     max_len = max((len(m.content or "") for m in messages), default=1)
@@ -246,6 +243,7 @@ def format_thread_bootstrap_html(
       <div class="query-label text-uppercase fw-bold mb-2"
            style="font-size:0.7rem;letter-spacing:.1em;color:#8b949e">THREAD</div>
       <div class="query-text">{_html.escape(thread_name)}</div>
+      {"".join(f'<span class="badge me-1 mt-2" style="background:#388bfd;font-size:0.75em">{_html.escape(t)}</span>' for t in (tags or []))}
       <div class="query-sub">{msg_count} messages</div>
     </div>
 
@@ -253,6 +251,72 @@ def format_thread_bootstrap_html(
         style="font-size:0.7rem;letter-spacing:.1em;color:#8b949e">MESSAGES</h6>
     {cards}
 
+  </div>
+</body>
+</html>"""
+
+
+def format_forum_index_html(channel_name: str, posts: list, post_ext: str) -> str:
+    """Render a Bootstrap index page for a forum channel listing all posts with links."""
+    import html as _html
+
+    def _card(post: dict) -> str:
+        title = _html.escape(post["title"])
+        author = _html.escape(post["author"])
+        ts = post["created_at"]
+        msg_count = post["message_count"]
+        tags_html = " ".join(
+            f'<span class="badge me-1" style="background:#388bfd;font-size:0.72em">{_html.escape(t)}</span>'
+            for t in post["tags"]
+        )
+        archived_badge = '<span class="badge bg-secondary ms-1" style="font-size:0.72em">archived</span>' if post["archived"] else ""
+        link = f"{channel_name}-posts/{post['safe_name']}.{post_ext}"
+        return f"""
+        <div class="card mb-3 border-0 shadow-sm">
+          <div class="card-body py-3">
+            <div class="d-flex justify-content-between align-items-start gap-3">
+              <div>
+                <a href="{link}" class="fw-semibold text-decoration-none" style="color:#58a6ff;font-size:1rem">{title}</a>
+                {archived_badge}
+                <div class="mt-1">{tags_html}</div>
+                <div class="mt-1" style="font-size:0.82rem;color:#8b949e">{author}</div>
+              </div>
+              <div class="text-end flex-shrink-0">
+                <div style="font-size:0.8rem;color:#8b949e">{ts}</div>
+                <div style="font-size:0.8rem;color:#8b949e">{msg_count} messages</div>
+              </div>
+            </div>
+          </div>
+        </div>"""
+
+    cards = "".join(_card(p) for p in posts)
+    post_count = len(posts)
+    escaped_name = _html.escape(channel_name)
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>#{escaped_name} (Forum)</title>
+  <link rel="stylesheet"
+        href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+        crossorigin="anonymous">
+  <style>
+    body {{ background:#0d1117; color:#c9d1d9; font-family:'Segoe UI',system-ui,sans-serif }}
+    .card {{ background:#161b22; border:1px solid #30363d !important }}
+    a {{ color:#58a6ff }}
+  </style>
+</head>
+<body class="p-4">
+  <div class="container-xl">
+    <div class="mb-4" style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:20px 24px">
+      <div style="font-size:0.7rem;letter-spacing:.1em;color:#8b949e;text-transform:uppercase;font-weight:bold;margin-bottom:8px">FORUM</div>
+      <div style="font-size:1.4rem;font-weight:600;color:#e6edf3">#{escaped_name}</div>
+      <div style="font-family:monospace;font-size:0.85rem;color:#8b949e;margin-top:4px">{post_count} posts</div>
+    </div>
+    <h6 class="text-uppercase fw-bold mb-3" style="font-size:0.7rem;letter-spacing:.1em;color:#8b949e">POSTS</h6>
+    {cards}
   </div>
 </body>
 </html>"""

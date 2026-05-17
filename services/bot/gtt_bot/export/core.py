@@ -9,7 +9,7 @@ from gtt_bot.config import URL_RE
 from gtt_bot.export.formatters import (
     get_forwarded_content, render_attachments_html, message_to_dict, linkify,
     build_html_rows, build_html_document, format_thread_bootstrap_html,
-    att_and_sticker_str, resolve_mentions,
+    format_forum_index_html, att_and_sticker_str, resolve_mentions,
 )
 
 log = logging.getLogger("bot")
@@ -218,4 +218,126 @@ async def export_channel_data(
         "urls": url_count,
         "threads": thread_count,
         "pinned": pinned_count,
+    }
+
+
+async def export_forum_data(
+    channel,  # discord.ForumChannel
+    export_dir,
+    fmt: str,
+    fetch_limit,
+    fetch_reactions_flag: bool = True,
+) -> dict:
+    """Export a forum channel — each post is a thread. Writes index + per-post files. Returns stats."""
+    export_dir = Path(export_dir)
+    export_dir.mkdir(parents=True, exist_ok=True)
+
+    all_posts = list(channel.threads)
+    try:
+        async for post in channel.archived_threads(limit=None):
+            all_posts.append(post)
+    except Exception:
+        pass
+
+    if not all_posts:
+        return {"messages": 0, "attachments": 0, "urls": 0, "threads": 0, "pinned": 0}
+
+    posts_dir = export_dir / f"{channel.name}-posts"
+    posts_dir.mkdir(parents=True, exist_ok=True)
+    att_dir = export_dir / f"{channel.name}-attachments"
+    urls_file = export_dir / f"{channel.name}-urls.txt"
+
+    post_index = []
+    total_messages = 0
+    total_attachments = 0
+    total_urls = 0
+
+    for post in all_posts:
+        msgs = await fetch_thread_messages(post, fetch_limit)
+        if not msgs:
+            continue
+
+        rxn_map = {}
+        if fetch_reactions_flag:
+            for msg in msgs:
+                if msg.reactions:
+                    rxn_map[str(msg.id)] = await fetch_reactions(msg)
+
+        safe_name = post.name.replace("/", "-").replace("\\", "-")[:80]
+        tags = [t.name for t in getattr(post, "applied_tags", [])]
+        created_at = post.created_at.strftime("%Y-%m-%d %H:%M") if post.created_at else ""
+        author = post.owner.display_name if post.owner else str(post.owner_id)
+
+        if fmt == "html":
+            html_content = format_thread_bootstrap_html(post.name, msgs, rxn_map, tags=tags)
+            (posts_dir / f"{safe_name}.html").write_text(html_content, encoding="utf-8")
+        elif fmt == "json":
+            records = [message_to_dict(msg, rxn_map.get(str(msg.id))) for msg in msgs]
+            (posts_dir / f"{safe_name}.json").write_text(
+                json.dumps(records, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
+        else:
+            lines = []
+            for msg in msgs:
+                ts = msg.created_at.strftime("%Y-%m-%d %H:%M")
+                att_str = att_and_sticker_str(msg)
+                fwd = get_forwarded_content(msg)
+                fwd_str = f" [Forwarded: {fwd}]" if fwd else ""
+                text = resolve_mentions(msg.system_content or msg.content or "", msg) + ((" " + att_str) if att_str else "") + fwd_str
+                lines.append(f"[{ts}] {msg.author.display_name}: {text}")
+            (posts_dir / f"{safe_name}.txt").write_text("\n".join(lines), encoding="utf-8")
+
+        att_count = await download_attachments(msgs, att_dir)
+        total_attachments += att_count
+
+        urls_content = extract_urls(msgs)
+        url_count = 0
+        if urls_content:
+            if urls_file.exists():
+                existing = urls_file.read_text(encoding="utf-8")
+                urls_file.write_text(existing + "\n" + urls_content, encoding="utf-8")
+            else:
+                urls_file.write_text(urls_content, encoding="utf-8")
+            url_count = len(urls_content.splitlines())
+        total_urls += url_count
+
+        post_index.append({
+            "title": post.name,
+            "safe_name": safe_name,
+            "author": author,
+            "created_at": created_at,
+            "message_count": len(msgs),
+            "tags": tags,
+            "archived": post.archived,
+        })
+        total_messages += len(msgs)
+
+    # Write index file
+    ext = "txt" if fmt == "text" else fmt
+    index_file = export_dir / f"{channel.name}.{ext}"
+
+    if fmt == "html":
+        index_file.write_text(
+            format_forum_index_html(channel.name, post_index, "html"), encoding="utf-8"
+        )
+    elif fmt == "json":
+        index_file.write_text(
+            json.dumps(post_index, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+    else:
+        lines = [f"Forum: #{channel.name} — {len(post_index)} posts\n"]
+        for p in post_index:
+            tags_str = f" [{', '.join(p['tags'])}]" if p["tags"] else ""
+            status = " [archived]" if p["archived"] else ""
+            lines.append(
+                f"[{p['created_at']}] {p['author']}: {p['title']} ({p['message_count']} msgs){tags_str}{status}"
+            )
+        index_file.write_text("\n".join(lines), encoding="utf-8")
+
+    return {
+        "messages": total_messages,
+        "attachments": total_attachments,
+        "urls": total_urls,
+        "threads": len(post_index),
+        "pinned": 0,
     }
