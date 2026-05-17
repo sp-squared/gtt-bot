@@ -10,7 +10,7 @@ HTML_STYLE = (
     ".ts{color:#6c7086;white-space:nowrap;width:140px}.author{color:#89b4fa;width:160px;font-weight:bold}"
     ".content{word-break:break-word}.rxn{background:#313244;border-radius:4px;padding:2px 6px;margin:2px;font-size:0.85em}"
     "a{color:#89dceb}img{border:1px solid #313244}"
-    ".fwd{color:#a6adc8;border-left:3px solid #45475a;padding-left:8px;margin-top:4px;font-size:0.9em}"
+    ".fwd{color:#89b4fa;border-left:3px solid #89b4fa;padding-left:8px;margin-top:4px;font-size:0.9em}"
     ".reply-ref{color:#89b4fa;font-size:0.82em;border-left:3px solid #89b4fa;padding-left:6px;margin-bottom:3px}"
 )
 
@@ -32,27 +32,33 @@ def get_forwarded_content(msg) -> str:
     """Extract content from forwarded messages using discord.py v2.5+ MessageSnapshot."""
     try:
         snapshots = getattr(msg, "message_snapshots", None)
-        if snapshots:
-            parts = []
-            for snap in snapshots:
-                text = getattr(snap, "content", "") or ""
-                if text:
-                    parts.append(text)
-            if parts:
-                return " | ".join(parts)
-
-        # Fallback: try accessing raw Discord payload data directly
-        for attr in ("_raw_data", "__dict__"):
-            raw = getattr(msg, attr, None)
-            if isinstance(raw, dict):
-                snaps = raw.get("message_snapshots", [])
-                for snap in snaps:
-                    inner = snap.get("message", {})
-                    text = inner.get("content", "")
-                    if text:
-                        return f"[Forwarded]: {text}"
-
-        return ""
+        if not snapshots:
+            return ""
+        parts = []
+        for snap in snapshots:
+            text = getattr(snap, "content", "") or ""
+            if text:
+                parts.append(text)
+            else:
+                # No text — try attachments then embeds for a useful label
+                atts = getattr(snap, "attachments", [])
+                for att in atts:
+                    name = getattr(att, "filename", None)
+                    if name:
+                        parts.append(f"[{name}]")
+                embeds = getattr(snap, "embeds", [])
+                for embed in embeds:
+                    title = getattr(embed, "title", None) or ""
+                    desc = getattr(embed, "description", None) or ""
+                    label = title or desc
+                    if label:
+                        parts.append(f"[embed: {label}]")
+                stickers = getattr(snap, "stickers", [])
+                for sticker in stickers:
+                    name = getattr(sticker, "name", None)
+                    if name:
+                        parts.append(f"[sticker: {name}]")
+        return " | ".join(parts) if parts else "[forwarded message]"
     except Exception as e:
         log.debug("get_forwarded_content failed: %s", e)
         return ""
@@ -136,6 +142,8 @@ def format_thread_bootstrap_html(
     """Render an exported thread/forum post as a self-contained Bootstrap 5 HTML file."""
     import html as _html
 
+    messages_by_id = {str(m.id): m for m in messages}
+
     max_len = max((len(m.content or "") for m in messages), default=1)
     max_rxn = max(
         (sum(len(u) for u in reactions_map.get(str(m.id), {}).values()) for m in messages),
@@ -176,17 +184,26 @@ def format_thread_bootstrap_html(
         fwd_content = get_forwarded_content(msg)
         reply_badge = ""
         fwd_badge = ""
-        fwd_block = ""
+        context_block = ""
         if is_forward(msg):
             fwd_badge = '<span class="badge bg-info text-dark ms-2">⤷ forwarded</span>'
-            if fwd_content:
-                escaped_fwd = _html.escape(fwd_content)
-                fwd_block = (
-                    f'<div class="mt-2 p-2" style="border-left:3px solid #58a6ff;'
-                    f'background:#0d1117;font-size:0.85em;color:#8b949e">{escaped_fwd}</div>'
-                )
-        elif msg.reference:
+            escaped_fwd = _html.escape(fwd_content).replace("\n", "<br>")
+            context_block = (
+                f'<div class="mt-2 p-2" style="border-left:3px solid #6e7681;'
+                f'background:#0d1117;font-size:0.85em;color:#8b949e">{escaped_fwd}</div>'
+            )
+        elif msg.reference and msg.reference.message_id:
             reply_badge = '<span class="badge bg-secondary ms-2">↩ reply</span>'
+            ref = messages_by_id.get(str(msg.reference.message_id))
+            if ref:
+                ref_author = _html.escape(ref.author.display_name)
+                ref_text = _html.escape(resolve_mentions(ref.content or "", ref)).replace("\n", "<br>")
+                context_block = (
+                    f'<div class="mt-2 p-2" style="border-left:3px solid #6e7681;'
+                    f'background:#0d1117;font-size:0.85em;color:#8b949e">'
+                    f'<span style="color:#c9d1d9;font-weight:600">{ref_author}</span> '
+                    f'{ref_text}</div>'
+                )
 
         pinned_badge = '<span class="badge bg-warning text-dark ms-2">📌 pinned</span>' if msg.pinned else ""
 
@@ -220,7 +237,7 @@ def format_thread_bootstrap_html(
             </div>
           </div>
           <div class="card-body">
-            {fwd_block}
+            {context_block}
             <pre class="chunk-pre mb-0"><code>{content}</code></pre>
             {(f'<div class="mt-2">{sticker_imgs}</div>') if sticker_imgs else ""}
             {(f'<div class="mt-2">{rxn_badges}</div>') if rxn_badges else ""}
@@ -364,7 +381,7 @@ def build_html_rows(
         if msg.reference and msg.reference.message_id and not is_forward(msg):
             ref = (messages_by_id or {}).get(str(msg.reference.message_id))
             if ref:
-                preview = discord.utils.escape_markdown(resolve_mentions((ref.content or "")[:80], ref))
+                preview = discord.utils.escape_markdown(resolve_mentions(ref.content or "", ref))
                 reply_html = (
                     f'<div class="reply-ref">↩ <b>{discord.utils.escape_markdown(ref.author.display_name)}</b>'
                     f": {linkify(preview)}</div>"
