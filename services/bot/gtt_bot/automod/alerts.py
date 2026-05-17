@@ -2,7 +2,7 @@ import logging
 
 import discord
 
-from gtt_bot.config import MOD_CHANNEL_ID
+from gtt_bot.config import DISCORD_MSG_LIMIT, MOD_CHANNEL_ID
 
 log = logging.getLogger("bot")
 
@@ -48,10 +48,15 @@ async def send_mod_alert(
         f"**Account age:** {account_age} days\n"
         f"**Rule triggered:** {rule}\n"
         f"**Action:** {timeout_status}\n"
-        f"**Message:**\n> {message_content[:500]}\n\n"
+        f"**Message:**\n> {message_content[:DISCORD_MSG_LIMIT - 300]}\n\n"
         f"Mods: review and take action if needed."
     )
     await mod_channel.send(alert)
+    if len(message_content) > DISCORD_MSG_LIMIT - 300:
+        remaining = message_content[DISCORD_MSG_LIMIT - 300:]
+        while remaining:
+            await mod_channel.send(f"*(continued)*\n> {remaining[:DISCORD_MSG_LIMIT - 20]}")
+            remaining = remaining[DISCORD_MSG_LIMIT - 20:]
     log.info("Automod alert sent for %s — rule: %s", member, rule)
 
 
