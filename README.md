@@ -2,8 +2,6 @@
 
 A local, containerized Discord bot for the [Goju Tech Talk (GTT)](https://youtube.com/@gojutechtalk) community. Answers questions grounded in an Obsidian knowledge base using RAG — local vector search for retrieval, Claude (Anthropic API) for opinionated, GTT-voiced responses.
 
-Also includes an MCP server for personal use with [Hermes Agent](https://github.com/NousResearch/hermes-agent) — see [HERMES_SUPPORT.md](HERMES_SUPPORT.md).
-
 ---
 
 #### Hermes Integration
