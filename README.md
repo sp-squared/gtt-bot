@@ -4,10 +4,6 @@ A local, containerized Discord bot for the [Goju Tech Talk (GTT)](https://youtub
 
 ---
 
-#### Hermes Integration
-
-![screenshot](/img/gtt_hermes_bot.png)
-
 ## Architecture
 
 ![screenshot](/img/gtt_bot_architecture.svg)
@@ -25,21 +21,14 @@ A local, containerized Discord bot for the [Goju Tech Talk (GTT)](https://youtub
 ║   │  Indexer service │      │  Discord bot     │      │  Ollama          │       ║
 ║   │  - Watches vault │◄────►│  - discord.py    │◄────►│  - nomic-embed   │       ║
 ║   │  - Chunks + embeds      │  - LlamaIndex    │      └──────┬───────────┘       ║
-║   └────────┬─────────┘      └────────┬─────────┘             │                   ║
-║            │                         │ Anthropic API         │ localhost:11434    ║
-║            ▼                         ▼                       │ localhost:6333     ║
-║         ┌──────────────────────────────┐                     │                   ║
-║         │  Qdrant (vector DB)          │                     │                   ║
-║         │  - Persistent volume         │                     │                   ║
-║         └──────────────────────────────┘                     │                   ║
+║   └────────┬─────────┘      └────────┬─────────┘                                 ║
+║            │                         │ Anthropic API                             ║
+║            ▼                         ▼                                           ║
+║         ┌──────────────────────────────┐                                         ║
+║         │  Qdrant (vector DB)          │                                         ║
+║         │  - Persistent volume         │                                         ║
+║         └──────────────────────────────┘                                         ║
 ╚══════════════════════════════════════════════════════════════════════════════════╝
-                                                               │
-                                                               ▼
-                                                  ┌──────────────────────┐
-                                                  │  MCP server          │
-                                                  │  - gtt_mcp_server.py │
-                                                  │  - Hermes Agent      │
-                                                  └──────────────────────┘
 ```
 
 ### Data flow
@@ -62,12 +51,6 @@ A local, containerized Discord bot for the [Goju Tech Talk (GTT)](https://youtub
 2. Bot embeds query and retrieves matching chunks (Ollama + Qdrant)
 3. Returns summary and raw chunks directly — no LLM involved
 
-**MCP query** (via Hermes Agent — see [HERMES_SUPPORT.md](HERMES_SUPPORT.md))
-1. Hermes Agent spawns `gtt_mcp_server.py` via stdio
-2. MCP server embeds query via Ollama (localhost:11434)
-3. Searches Qdrant (localhost:6333) with hybrid scoring
-4. Returns ranked chunks to Hermes for summarization
-
 ---
 
 ## Project structure
@@ -76,14 +59,9 @@ A local, containerized Discord bot for the [Goju Tech Talk (GTT)](https://youtub
 gtt-bot/
 ├── services/
 │   ├── bot/              Discord bot (runs in Docker)
-│   ├── indexer/           Vault indexer (runs in Docker)
-│   └── mcp/              MCP server for Hermes Agent (runs natively)
-│       ├── gtt_mcp_server.py
-│       ├── requirements.txt
-│       └── README.md
+│   └── indexer/           Vault indexer (runs in Docker)
 ├── docker-compose.yml
-├── README.md             ← you are here
-└── HERMES_SUPPORT.md     Hermes Agent integration guide
+└── README.md             ← you are here
 ```
 
 ---
@@ -111,7 +89,6 @@ gtt-bot/
 | **Discord client** | discord.py | Bot integration |
 | **File watcher** | watchdog | Auto-reindex on vault change |
 | **Containerization** | Docker Compose | Multi-service orchestration |
-| **MCP server** | httpx + MCP SDK | Hermes Agent integration |
 
 ---
 
@@ -246,14 +223,6 @@ docker compose restart gtt-indexer
 - **`.env`** — never commit this file. It's in `.gitignore` by default.
 - **Ports** — Qdrant (6333) and Ollama (11434) are bound to `127.0.0.1` and not accessible from outside the host.
 - **Rate limiting** — per-user cooldowns on both paths. Adjust `COOLDOWN_SECONDS` and `MAX_QUESTION_LENGTH` to control API cost exposure.
-
----
-
-## Hermes Agent integration
-
-The GTT vault can also be queried via [Hermes Agent](https://github.com/NousResearch/hermes-agent) through an MCP (Model Context Protocol) server. This is a separate, personal interface — it does not affect the Discord bot.
-
-See [HERMES_SUPPORT.md](HERMES_SUPPORT.md) for full setup instructions.
 
 ---
 
