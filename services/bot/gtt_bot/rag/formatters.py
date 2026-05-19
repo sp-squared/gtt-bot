@@ -98,13 +98,13 @@ def split_at_sentence(text: str, limit: int = 1950) -> list[str]:
         return [text]
     chunks = []
     while len(text) > limit:
-        cut = text.rfind(". ", 0, limit)
+        cut = text.rfind("\n", 0, limit)
         if cut == -1:
-            cut = text.rfind("\n", 0, limit)
+            cut = text.rfind(". ", 0, limit)
+            if cut != -1:
+                cut += 1  # include the period
         if cut == -1:
             cut = limit
-        else:
-            cut += 1  # include the period
         chunks.append(text[:cut].strip())
         text = text[cut:].strip()
     if text:
