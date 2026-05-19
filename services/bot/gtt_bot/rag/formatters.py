@@ -65,7 +65,10 @@ def format_exact_match(nodes: list) -> str:
     parts = []
     for source, node in primary.items():
         stem = source.replace(".md", "")
-        all_chunks = [node] + extras.get(source, [])
+        all_chunks = sorted(
+            [node] + extras.get(source, []),
+            key=lambda n: getattr(n.node, "start_char_idx", None) or 0,
+        )
 
         # Concatenate lines across chunks, dropping duplicates from the 50-token overlap.
         # Empty lines are always kept so paragraph breaks and spacing are preserved.
