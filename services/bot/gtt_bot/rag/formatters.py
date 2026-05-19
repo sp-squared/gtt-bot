@@ -67,7 +67,7 @@ def format_exact_match(nodes: list) -> str:
         stem = source.replace(".md", "")
         all_chunks = sorted(
             [node] + extras.get(source, []),
-            key=lambda n: getattr(n.node, "start_char_idx", None) or 0,
+            key=lambda n: n.metadata.get("start_char_idx", 0),
         )
 
         # Concatenate lines across chunks, dropping duplicates from the 50-token overlap.

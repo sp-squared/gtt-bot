@@ -98,6 +98,8 @@ def build_index():
 
     parser = SentenceSplitter(chunk_size=512, chunk_overlap=50)
     nodes = parser.get_nodes_from_documents(docs)
+    for node in nodes:
+        node.metadata["start_char_idx"] = node.start_char_idx or 0
     clean_nodes = [n for n in nodes if not is_noise_chunk(n.get_content())]
 
     log.info("Indexing %d/%d chunks into %s (filtered %d noise chunks)",
