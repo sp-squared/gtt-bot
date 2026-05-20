@@ -33,7 +33,7 @@ def setup(tree: app_commands.CommandTree) -> None:
         interaction: discord.Interaction,
         current: str,
     ) -> list[app_commands.Choice[str]]:
-        current_lower = current.lower()
+        current_lower = current.lower().replace("-", " ")
         matches = [
             app_commands.Choice(name=term, value=term)
             for term in G.query_terms
