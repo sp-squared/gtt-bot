@@ -43,6 +43,20 @@ def format_raw_chunks_plain(nodes: list) -> str:
     return "\n\n---\n\n".join(parts)
 
 
+_OVERLAP_WINDOW = 600  # generous character budget for a 50-token overlap
+
+
+def _strip_chunk_overlap(prev: str, curr: str) -> str:
+    """Remove the prefix of `curr` that is already present at the tail of `prev`."""
+    prev_tail = prev[-_OVERLAP_WINDOW:]
+    curr_head = curr[:_OVERLAP_WINDOW]
+    limit = min(len(prev_tail), len(curr_head))
+    for length in range(limit, 0, -1):
+        if prev_tail.endswith(curr_head[:length]):
+            return curr[length:]
+    return curr
+
+
 def format_exact_match(nodes: list) -> str:
     """Content-only output for exact (100% keyword score) matches — no summary section.
 
@@ -70,23 +84,19 @@ def format_exact_match(nodes: list) -> str:
             key=lambda n: n.metadata.get("start_char_idx", 0),
         )
 
-        # Concatenate lines across chunks, dropping duplicates from the 50-token overlap.
-        # Empty lines are always kept so paragraph breaks and spacing are preserved.
-        combined: list[str] = []
-        seen_lines: set[str] = set()
-        for chunk in all_chunks:
-            for line in chunk.get_content().strip().splitlines():
-                stripped = line.strip()
-                if stripped and stripped in seen_lines:
-                    continue
-                if stripped:
-                    seen_lines.add(stripped)
-                combined.append(line)
+        # Concatenate chunks, stripping the overlap prefix from each subsequent chunk
+        # so the 50-token sliding window doesn't produce repeated content (including
+        # the blank lines that the old per-line seen-set never deduplicated).
+        texts = [all_chunks[0].get_content().strip()]
+        for chunk in all_chunks[1:]:
+            texts.append(_strip_chunk_overlap(texts[-1], chunk.get_content().strip()))
+        content = "".join(texts).strip()
 
-        if combined and combined[0].strip() == stem:
-            combined = combined[1:]
+        lines = content.splitlines()
+        if lines and lines[0].strip() == stem:
+            lines = lines[1:]
+        content = "\n".join(lines).strip()
 
-        content = "\n".join(combined).strip()
         quoted = "\n".join(f"> {line}" if line.strip() else ">" for line in content.splitlines())
         parts.append(f"`{source}` — **100% match**\n{quoted}")
     return "\n\n---\n\n".join(parts)
