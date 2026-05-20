@@ -1,7 +1,7 @@
 ---
 source: youtube_clip
 video_id: zNYSHwaSCio
-clip_url: https://youtu.be/zNYSHwaSCio?t=0
+clip_url: https://youtu.be/zNYSHwaSCio
 start_seconds: 0
 segment_count: 31
 ---

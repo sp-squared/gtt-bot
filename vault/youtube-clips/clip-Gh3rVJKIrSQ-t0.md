@@ -1,7 +1,7 @@
 ---
 source: youtube_clip
 video_id: Gh3rVJKIrSQ
-clip_url: https://youtu.be/Gh3rVJKIrSQ?t=0
+clip_url: https://youtu.be/Gh3rVJKIrSQ
 start_seconds: 0
 segment_count: 12
 ---
