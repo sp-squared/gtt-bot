@@ -295,7 +295,7 @@ def main():
             word_count = len(transcript_data["full_text"].split())
             print(f"OK ({word_count} words, {transcript_data['segment_count']} segments)")
         except Exception as e:
-            error_msg = str(e).split("\n")[0]
+            error_msg = str(e).split('\n')[0] if str(e).strip() else type(e).__name__ if str(e).strip() else type(e).__name__
             print(f"FAIL - {error_msg}")
             errors.append({"url": url, "video_id": video_id, "error": error_msg})
 
